@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { Activity, Play, Trash2 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
-import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo } from "../components/ui";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo, Row } from "../components/ui";
 
 const INTERVALS = [
   { label: "Every 5 minutes", value: 300 },
@@ -75,50 +76,52 @@ export function Automations() {
             <EmptyBlock icon={Activity} title="No automations" hint="Create one to run agent tasks on a schedule." />
           )}
           <div className="list">
-            {automations.map((a) => (
-              <div className="list-row" key={a.id}>
-                <div>
-                  <div className="row-top">
-                    <strong>{a.name}</strong>
-                    <Badge tone={a.enabled ? "ok" : "warn"}>{a.enabled ? "enabled" : "paused"}</Badge>
-                    {a.last_status && <Badge tone={a.last_status === "succeeded" ? "ok" : "warn"}>{a.last_status}</Badge>}
-                    <span className="muted small">every {Math.round(a.schedule_seconds / 60)}m · last {timeAgo(a.last_run_at)}</span>
+            <AnimatePresence mode="popLayout">
+              {automations.map((a, idx) => (
+                <Row key={a.id} index={idx}>
+                  <div>
+                    <div className="row-top">
+                      <strong>{a.name}</strong>
+                      <Badge tone={a.enabled ? "ok" : "warn"}>{a.enabled ? "enabled" : "paused"}</Badge>
+                      {a.last_status && <Badge tone={a.last_status === "succeeded" ? "ok" : "warn"}>{a.last_status}</Badge>}
+                      <span className="muted small">every {Math.round(a.schedule_seconds / 60)}m · last {timeAgo(a.last_run_at)}</span>
+                    </div>
+                    <p className="muted small">{a.prompt}</p>
+                    {a.last_result && <pre className="output small">{a.last_result.slice(0, 400)}</pre>}
                   </div>
-                  <p className="muted small">{a.prompt}</p>
-                  {a.last_result && <pre className="output small">{a.last_result.slice(0, 400)}</pre>}
-                </div>
-                <div className="row-actions">
-                  <button
-                    className="icon"
-                    title="Run now"
-                    disabled={running === a.id}
-                    onClick={async () => {
-                      setRunning(a.id);
-                      try {
-                        await api.runAutomation(a.id);
-                        notify("Automation executed");
+                  <div className="row-actions">
+                    <button
+                      className="icon"
+                      title="Run now"
+                      disabled={running === a.id}
+                      onClick={async () => {
+                        setRunning(a.id);
+                        try {
+                          await api.runAutomation(a.id);
+                          notify("Automation executed");
+                          void reload();
+                        } catch (err) {
+                          notify(String(err), "err");
+                        } finally {
+                          setRunning(null);
+                        }
+                      }}
+                    >
+                      <Play size={14} />
+                    </button>
+                    <button
+                      className="icon danger"
+                      onClick={async () => {
+                        await api.deleteAutomation(a.id);
                         void reload();
-                      } catch (err) {
-                        notify(String(err), "err");
-                      } finally {
-                        setRunning(null);
-                      }
-                    }}
-                  >
-                    <Play size={14} />
-                  </button>
-                  <button
-                    className="icon danger"
-                    onClick={async () => {
-                      await api.deleteAutomation(a.id);
-                      void reload();
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </Row>
+              ))}
+            </AnimatePresence>
           </div>
         </Panel>
       </div>

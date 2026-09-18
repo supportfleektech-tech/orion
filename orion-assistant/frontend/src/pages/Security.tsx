@@ -1,7 +1,8 @@
 import { Check, Shield, X } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
-import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, Toggle, timeAgo } from "../components/ui";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, Toggle, timeAgo, Row } from "../components/ui";
 
 export function Security() {
   const { data: status, reload: reloadStatus } = useAsync(() => api.status(), [], 15000);
@@ -43,63 +44,67 @@ export function Security() {
           <EmptyBlock icon={Shield} title="No approval requests" hint="High-risk tool calls will appear here for review." />
         )}
         <div className="list">
-          {approvals.map((a) => (
-            <div className="list-row" key={a.id}>
-              <div>
-                <div className="row-top">
-                  <strong>{a.tool_name}</strong>
-                  <Badge tone={a.status === "pending" ? "warn" : a.status === "approved" ? "ok" : "err"}>{a.status}</Badge>
-                  <span className="muted small">{timeAgo(a.created_at)}</span>
+          <AnimatePresence mode="popLayout">
+            {approvals.map((a, idx) => (
+              <Row key={a.id} index={idx}>
+                <div>
+                  <div className="row-top">
+                    <strong>{a.tool_name}</strong>
+                    <Badge tone={a.status === "pending" ? "warn" : a.status === "approved" ? "ok" : "err"}>{a.status}</Badge>
+                    <span className="muted small">{timeAgo(a.created_at)}</span>
+                  </div>
+                  <p className="muted small">{a.reason}</p>
+                  <pre className="output small">{JSON.stringify(a.arguments, null, 2)}</pre>
                 </div>
-                <p className="muted small">{a.reason}</p>
-                <pre className="output small">{JSON.stringify(a.arguments, null, 2)}</pre>
-              </div>
-              {a.status === "pending" && (
-                <div className="row-actions">
-                  <button
-                    className="icon ok"
-                    title="Approve and execute"
-                    onClick={async () => {
-                      await api.resolveApproval(a.id, true);
-                      notify("Approved and executed");
-                      void reload();
-                    }}
-                  >
-                    <Check size={15} />
-                  </button>
-                  <button
-                    className="icon danger"
-                    title="Reject"
-                    onClick={async () => {
-                      await api.resolveApproval(a.id, false);
-                      notify("Rejected");
-                      void reload();
-                    }}
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                {a.status === "pending" && (
+                  <div className="row-actions">
+                    <button
+                      className="icon ok"
+                      title="Approve and execute"
+                      onClick={async () => {
+                        await api.resolveApproval(a.id, true);
+                        notify("Approved and executed");
+                        void reload();
+                      }}
+                    >
+                      <Check size={15} />
+                    </button>
+                    <button
+                      className="icon danger"
+                      title="Reject"
+                      onClick={async () => {
+                        await api.resolveApproval(a.id, false);
+                        notify("Rejected");
+                        void reload();
+                      }}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                )}
+              </Row>
+            ))}
+          </AnimatePresence>
         </div>
       </Panel>
 
       <Panel subtitle="AUDIT LOG" title="Recent governed events">
         <div className="list compact">
-          {(audit?.events ?? []).slice(0, 40).map((e) => (
-            <div className="list-row" key={e.id}>
-              <div>
-                <div className="row-top">
-                  <Badge tone={e.event_type.includes("denied") || e.event_type.includes("failed") ? "err" : "info"}>
-                    {e.event_type}
-                  </Badge>
-                  <span className="muted small">{e.actor} · {timeAgo(e.created_at)}</span>
+          <AnimatePresence mode="popLayout">
+            {(audit?.events ?? []).slice(0, 40).map((e, idx) => (
+              <Row key={e.id} index={idx}>
+                <div>
+                  <div className="row-top">
+                    <Badge tone={e.event_type.includes("denied") || e.event_type.includes("failed") ? "err" : "info"}>
+                      {e.event_type}
+                    </Badge>
+                    <span className="muted small">{e.actor} · {timeAgo(e.created_at)}</span>
+                  </div>
+                  <p className="muted small">{e.summary}</p>
                 </div>
-                <p className="muted small">{e.summary}</p>
-              </div>
-            </div>
-          ))}
+              </Row>
+            ))}
+          </AnimatePresence>
           {(audit?.events ?? []).length === 0 && <p className="muted small">No audit events recorded yet.</p>}
         </div>
       </Panel>

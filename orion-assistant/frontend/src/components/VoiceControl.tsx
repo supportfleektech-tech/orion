@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Mic, MicOff, Volume2, VolumeX, X } from "lucide-react";
+import { spring } from "../lib/motion";
 import { api, type VoiceCommand } from "../lib/api";
 import { useVoice } from "../hooks/useVoice";
 
@@ -17,6 +19,8 @@ interface VoiceContextValue {
   listening: boolean;
   speaking: boolean;
   interim: string;
+  /** 0-1 live microphone loudness. */
+  level: number;
   toggle: () => void;
   speak: (text: string) => Promise<void>;
   stopSpeaking: () => void;
@@ -161,6 +165,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       listening: voice.listening,
       speaking: voice.speaking,
       interim: voice.interim,
+      level: voice.level,
       toggle: voice.toggle,
       speak: voice.speak,
       stopSpeaking: voice.stopSpeaking,
@@ -179,43 +184,105 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       {children}
 
       {/* ------------------------------------------------ live subtitle */}
-      {(voice.listening || subtitle) && (
-        <div className={`subtitle-bar ${voice.listening ? "live" : ""}`} role="status" aria-live="polite">
-          <span className="subtitle-dot" />
-          <span className="subtitle-text">
-            {subtitle || voice.interim || "Listening…"}
-            {voice.interim && <span className="subtitle-interim-caret" />}
-          </span>
-          <button className="subtitle-close" onClick={voice.stop} aria-label="Stop listening">
-            <X size={13} />
-          </button>
-        </div>
-      )}
+      <AnimatePresence>
+        {(voice.listening || subtitle) && (
+          <motion.div
+            className={`subtitle-bar ${voice.listening ? "live" : ""}`}
+            role="status"
+            aria-live="polite"
+            initial={{ opacity: 0, y: 16, x: "-50%", scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+            exit={{ opacity: 0, y: 10, x: "-50%", scale: 0.96 }}
+            transition={spring}
+          >
+            <span className="subtitle-dot" />
+            <span className="subtitle-text">
+              {subtitle || voice.interim || "Listening…"}
+              {voice.interim && <span className="subtitle-interim-caret" />}
+            </span>
+            <button className="subtitle-close" onClick={voice.stop} aria-label="Stop listening">
+              <X size={13} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ------------------------------------------------- mic controls */}
       <div className="voice-dock">
-        {voice.speaking && (
-          <button className="voice-btn" onClick={voice.stopSpeaking} title="Stop speaking">
-            <VolumeX size={17} />
-          </button>
-        )}
-        <button
+        <AnimatePresence>
+          {voice.speaking && (
+            <motion.button
+              className="voice-btn"
+              onClick={voice.stopSpeaking}
+              title="Stop speaking"
+              initial={{ opacity: 0, scale: 0.6, x: 12 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.6, x: 12 }}
+              transition={spring}
+            >
+              {/* Bars that bounce while audio plays. */}
+              <motion.span
+                animate={{ scale: [1, 0.86, 1] }}
+                transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
+                style={{ display: "grid", placeItems: "center" }}
+              >
+                <VolumeX size={17} />
+              </motion.span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        <motion.button
           className={`voice-btn mic ${voice.listening ? "active" : ""}`}
           onClick={voice.toggle}
+          whileHover={{ scale: 1.06, y: -2 }}
+          whileTap={{ scale: 0.92 }}
           title={
             sttUnavailable
               ? "Speech recognition unavailable — see the Voice section in Settings"
               : `${voice.listening ? "Stop" : "Start"} listening  (Ctrl+Shift+V)`
           }
         >
-          {voice.listening ? <Mic size={18} /> : <MicOff size={18} />}
-        </button>
+          {/* A ring that scales with real microphone loudness, so the user can
+              see they are actually being heard. */}
+          {voice.listening && (
+            <motion.span
+              className="voice-level"
+              animate={{ scale: 1 + voice.level * 0.55, opacity: 0.25 + voice.level * 0.55 }}
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+            />
+          )}
+          <motion.span
+            key={voice.listening ? "on" : "off"}
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={spring}
+            style={{ display: "grid", placeItems: "center" }}
+          >
+            {voice.listening ? <Mic size={18} /> : <MicOff size={18} />}
+          </motion.span>
+        </motion.button>
       </div>
 
       {/* ------------------------------------------------ confirmation */}
+      <AnimatePresence>
       {pending && (
-        <div className="modal-backdrop" onClick={() => setPending(null)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <motion.div
+          className="modal-backdrop"
+          onClick={() => setPending(null)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div
+            className="modal"
+            style={{ width: "min(480px, 100%)" }}
+            onClick={(event) => event.stopPropagation()}
+            initial={{ opacity: 0, scale: 0.93, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={spring}
+          >
             <h3>Confirm voice command</h3>
             <p className="muted">
               Heard: <em>“{pending.command.transcript}”</em>
@@ -235,16 +302,25 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
-      {toast && (
-        <div className={`toast ${toast.kind}`}>
-          {toast.kind === "ok" ? <Volume2 size={14} /> : null}
-          <span>{toast.text}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            className={`toast ${toast.kind}`}
+            initial={{ opacity: 0, y: 20, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={spring}
+          >
+            {toast.kind === "ok" ? <Volume2 size={14} /> : null}
+            <span>{toast.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </VoiceContext.Provider>
   );
 }

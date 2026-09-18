@@ -14,6 +14,7 @@ import {
   Shield,
   TerminalSquare,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { api } from "../lib/api";
 import { useAsync } from "../hooks/useApi";
 
@@ -36,6 +37,7 @@ const items = [
 export function Sidebar() {
   const { data } = useAsync(() => api.status(), [], 20000);
   const online = Boolean(data && !data.degraded);
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -45,16 +47,38 @@ export function Sidebar() {
           <span>AI OPERATING SYSTEM</span>
         </div>
       </div>
-      <div className="nav-group">
-        {items.map(([to, label, Icon]) => (
+
+      <nav className="nav-group">
+        {items.map(([to, label, Icon], index) => (
           <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
-            <Icon size={17} />
-            <span>{label}</span>
+            {({ isActive }) => (
+              <>
+                {/* A single shared element: Framer slides it between routes
+                    rather than fading one pill out and another in. */}
+                {isActive && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    className="nav-pill"
+                    transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                  />
+                )}
+                <motion.span
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.03 * index, duration: 0.3 }}
+                  style={{ display: "contents" }}
+                >
+                  <Icon size={17} />
+                  <span className="nav-label">{label}</span>
+                </motion.span>
+              </>
+            )}
           </NavLink>
         ))}
-      </div>
+      </nav>
+
       <div className="sidebar-footer">
-        <div className="status-dot" style={{ background: data ? (online ? "#5ee2a1" : "#ffb454") : "#6b7484" }} />
+        <span className={`status-dot ${data ? "" : "off"}`} style={data && !online ? { background: "var(--warn)" } : undefined} />
         <span>{data ? (online ? "Runtime online" : "Degraded mode") : "Connecting…"}</span>
       </div>
     </aside>

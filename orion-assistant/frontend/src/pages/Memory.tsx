@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { Brain, Pin, PinOff, Search, Trash2 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api, MemoryItem } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
-import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo } from "../components/ui";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo, Row } from "../components/ui";
 
 export function Memory() {
   const { data, error, loading, reload } = useAsync(() => api.memories(), []);
@@ -109,45 +110,47 @@ export function Memory() {
         {error && <ErrorBlock message={error} />}
         {!loading && items.length === 0 && <EmptyBlock icon={Brain} title="No memories yet" hint="Store a fact above or start a conversation." />}
         <div className="list">
-          {items.map((m) => (
-            <div className="list-row" key={m.id}>
-              <div>
-                <div className="row-top">
-                  <Badge tone="info">{m.kind}</Badge>
-                  {m.key && <code>{m.key}</code>}
-                  {m.pinned && <Badge tone="warn">pinned</Badge>}
-                  {results && <Badge tone="ok">score {m.score}</Badge>}
-                  <span className="muted small">conf {m.confidence.toFixed(2)} · {timeAgo(m.created_at)}</span>
+          <AnimatePresence mode="popLayout">
+            {items.map((m, idx) => (
+              <Row key={m.id} index={idx}>
+                <div>
+                  <div className="row-top">
+                    <Badge tone="info">{m.kind}</Badge>
+                    {m.key && <code>{m.key}</code>}
+                    {m.pinned && <Badge tone="warn">pinned</Badge>}
+                    {results && <Badge tone="ok">score {m.score}</Badge>}
+                    <span className="muted small">conf {m.confidence.toFixed(2)} · {timeAgo(m.created_at)}</span>
+                  </div>
+                  <p>{m.content}</p>
                 </div>
-                <p>{m.content}</p>
-              </div>
-              <div className="row-actions">
-                <button
-                  className="icon"
-                  title={m.pinned ? "Unpin" : "Pin"}
-                  onClick={async () => {
-                    await api.pinMemory(m.id, !m.pinned);
-                    setResults(null);
-                    void reload();
-                  }}
-                >
-                  {m.pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                </button>
-                <button
-                  className="icon danger"
-                  title="Delete"
-                  onClick={async () => {
-                    await api.deleteMemory(m.id);
-                    notify("Memory deleted");
-                    setResults(null);
-                    void reload();
-                  }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+                <div className="row-actions">
+                  <button
+                    className="icon"
+                    title={m.pinned ? "Unpin" : "Pin"}
+                    onClick={async () => {
+                      await api.pinMemory(m.id, !m.pinned);
+                      setResults(null);
+                      void reload();
+                    }}
+                  >
+                    {m.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                  </button>
+                  <button
+                    className="icon danger"
+                    title="Delete"
+                    onClick={async () => {
+                      await api.deleteMemory(m.id);
+                      notify("Memory deleted");
+                      setResults(null);
+                      void reload();
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </Row>
+            ))}
+          </AnimatePresence>
         </div>
       </Panel>
       <Toast toast={toast} />

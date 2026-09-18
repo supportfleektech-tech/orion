@@ -53,11 +53,15 @@ export function useVoice(options: UseVoiceOptions = {}) {
   const [interim, setInterim] = useState("");
   const [finalText, setFinalText] = useState("");
   const [engine, setEngine] = useState<"browser" | "server" | null>(null);
+  /** 0–1 microphone loudness, for the level ring around the mic button. */
+  const [level, setLevel] = useState(0);
 
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const levelFrame = useRef(0);
   const shouldListen = useRef(false);
   // Keep callbacks in refs so restarting recognition never uses stale closures.
   const handlers = useRef(options);
@@ -65,6 +69,54 @@ export function useVoice(options: UseVoiceOptions = {}) {
 
   useEffect(() => {
     api.voiceStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
+  /**
+   * Drive the level meter from the live microphone stream.
+   *
+   * Uses the time-domain waveform (RMS) rather than the frequency spectrum:
+   * we want perceived loudness, not tone. The value is smoothed so the ring
+   * eases rather than jitters at frame rate.
+   */
+  const startLevelMeter = useCallback((media: MediaStream) => {
+    try {
+      const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!Ctx) return;
+
+      const context: AudioContext = new Ctx();
+      audioCtx.current = context;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.7;
+      context.createMediaStreamSource(media).connect(analyser);
+
+      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      let smoothed = 0;
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(buffer);
+        let sum = 0;
+        for (const sample of buffer) {
+          const centred = (sample - 128) / 128;
+          sum += centred * centred;
+        }
+        const rms = Math.sqrt(sum / buffer.length);
+        // Speech RMS sits well below 1; scale so normal talking fills the ring.
+        smoothed = smoothed * 0.75 + Math.min(1, rms * 3.2) * 0.25;
+        setLevel(smoothed);
+        levelFrame.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch {
+      /* Level metering is decorative: never let it break recording. */
+    }
+  }, []);
+
+  const stopLevelMeter = useCallback(() => {
+    cancelAnimationFrame(levelFrame.current);
+    void audioCtx.current?.close().catch(() => undefined);
+    audioCtx.current = null;
+    setLevel(0);
   }, []);
 
   const handleUtterance = useCallback(async (text: string) => {
@@ -130,13 +182,29 @@ export function useVoice(options: UseVoiceOptions = {}) {
     recognition.current = rec;
     rec.start();
     setEngine("browser");
+
+    // The Web Speech API hides its audio, so grab a parallel stream purely to
+    // drive the level ring. Failure here is silent and harmless.
+    navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((media) => {
+        if (!shouldListen.current) {
+          media.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream.current = media;
+        startLevelMeter(media);
+      })
+      .catch(() => undefined);
+
     return true;
-  }, [handleUtterance]);
+  }, [handleUtterance, startLevelMeter]);
 
   // -------------------------------------------------------------- server STT
   const startServer = useCallback(async () => {
     const media = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.current = media;
+    startLevelMeter(media);
 
     const rec = new MediaRecorder(media);
     const chunks: Blob[] = [];
@@ -178,7 +246,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
       if (recorder.current?.state === "recording") recorder.current.stop();
     }, SEGMENT_MS);
     setEngine("server");
-  }, []);
+  }, [startLevelMeter]);
 
   // ------------------------------------------------------------------ control
   const start = useCallback(async () => {
@@ -210,7 +278,8 @@ export function useVoice(options: UseVoiceOptions = {}) {
     recorder.current = null;
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
-  }, []);
+    stopLevelMeter();
+  }, [stopLevelMeter]);
 
   const toggle = useCallback(() => {
     if (shouldListen.current) stop();
@@ -262,6 +331,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
     listening,
     speaking,
     interim,
+    level,
     finalText,
     engine,
     start,

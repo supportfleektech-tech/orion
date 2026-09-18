@@ -1,8 +1,9 @@
 import { FormEvent, useRef, useState } from "react";
 import { Database, FileText, Search, Trash2, Upload } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api, KnowledgeHit } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
-import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, bytes, timeAgo } from "../components/ui";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, bytes, timeAgo, Row } from "../components/ui";
 
 export function Knowledge() {
   const { data, error, loading, reload } = useAsync(() => api.documents(), []);
@@ -107,18 +108,20 @@ export function Knowledge() {
             <button className="primary">Search</button>
           </form>
           <div className="list" style={{ marginTop: 14 }}>
-            {(hits ?? []).map((h) => (
-              <div className="list-row" key={h.id}>
-                <div>
-                  <div className="row-top">
-                    <Badge tone="info">{h.name ?? "document"}</Badge>
-                    <Badge tone="ok">score {h.score}</Badge>
-                    <span className="muted small">chunk #{h.chunk_index}</span>
+            <AnimatePresence mode="popLayout">
+              {(hits ?? []).map((h, idx) => (
+                <Row key={h.id} index={idx}>
+                  <div>
+                    <div className="row-top">
+                      <Badge tone="info">{h.name ?? "document"}</Badge>
+                      <Badge tone="ok">score {h.score}</Badge>
+                      <span className="muted small">chunk #{h.chunk_index}</span>
+                    </div>
+                    <p>{h.content.slice(0, 420)}{h.content.length > 420 ? "…" : ""}</p>
                   </div>
-                  <p>{h.content.slice(0, 420)}{h.content.length > 420 ? "…" : ""}</p>
-                </div>
-              </div>
-            ))}
+                </Row>
+              ))}
+            </AnimatePresence>
             {hits && hits.length === 0 && <p className="muted small">No matches.</p>}
           </div>
         </Panel>
@@ -131,31 +134,33 @@ export function Knowledge() {
           <EmptyBlock icon={FileText} title="No documents indexed" hint="Upload a file or paste text above." />
         )}
         <div className="list">
-          {documents.map((d) => (
-            <div className="list-row" key={d.id}>
-              <div>
-                <div className="row-top">
-                  <FileText size={14} />
-                  <strong>{d.name}</strong>
-                  <Badge tone="info">{d.chunks} chunks</Badge>
-                  <span className="muted small">{bytes(d.size_bytes)} · {timeAgo(d.created_at)}</span>
+          <AnimatePresence mode="popLayout">
+            {documents.map((d, idx) => (
+              <Row key={d.id} index={idx}>
+                <div>
+                  <div className="row-top">
+                    <FileText size={14} />
+                    <strong>{d.name}</strong>
+                    <Badge tone="info">{d.chunks} chunks</Badge>
+                    <span className="muted small">{bytes(d.size_bytes)} · {timeAgo(d.created_at)}</span>
+                  </div>
+                  <p className="muted small">{d.path}</p>
                 </div>
-                <p className="muted small">{d.path}</p>
-              </div>
-              <div className="row-actions">
-                <button
-                  className="icon danger"
-                  onClick={async () => {
-                    await api.deleteDocument(d.id);
-                    notify("Document removed");
-                    void reload();
-                  }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+                <div className="row-actions">
+                  <button
+                    className="icon danger"
+                    onClick={async () => {
+                      await api.deleteDocument(d.id);
+                      notify("Document removed");
+                      void reload();
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </Row>
+            ))}
+          </AnimatePresence>
         </div>
       </Panel>
       <Toast toast={toast} />

@@ -12,9 +12,31 @@ import {
   MemoryItem,
   ProcessedAttachment,
 } from "../lib/api";
+import { AnimatePresence, motion } from "framer-motion";
 import { Badge, Toast, timeAgo } from "../components/ui";
+import { spring } from "../lib/motion";
 import { useToast } from "../hooks/useApi";
 import { useVoiceControl } from "../components/VoiceControl";
+
+/**
+ * Three dots that rise in sequence while the agent works.
+ *
+ * A spinner says "busy"; this says "thinking", which is closer to the truth
+ * during a multi-step tool loop.
+ */
+function ThinkingDots() {
+  return (
+    <span className="thinking-dots" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <motion.i
+          key={i}
+          animate={{ y: [0, -4, 0], opacity: [0.35, 1, 0.35] }}
+          transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.16, ease: "easeInOut" }}
+        />
+      ))}
+    </span>
+  );
+}
 
 export function Chat() {
   const [params, setParams] = useSearchParams();
@@ -385,14 +407,30 @@ export function Chat() {
 
         <div className="messages">
           {messages.length === 0 && !busy ? (
-            <div className="empty-chat">
-              <Bot size={40} />
+            <motion.div
+              className="empty-chat"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <motion.div
+                animate={{ y: [0, -7, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <Bot size={40} />
+              </motion.div>
               <h3>Ready when you are.</h3>
               <p>Ask anything. ORION retrieves memory and knowledge, then chooses the appropriate execution path.</p>
-            </div>
+            </motion.div>
           ) : (
             messages.map((m, i) => (
-              <div key={i} className={`msg ${m.role}`}>
+              <motion.div
+                key={i}
+                className={`msg ${m.role}`}
+                initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              >
                 <div className="msg-icon">{m.role === "user" ? <UserRound size={16} /> : <Bot size={16} />}</div>
                 <div>
                   <div className="msg-role">
@@ -413,29 +451,62 @@ export function Chat() {
                     {m.streaming && <span className="caret" aria-hidden="true" />}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
+          <AnimatePresence>
           {busy && (
-            <div className="msg assistant">
-              <div className="msg-icon"><Bot size={16} /></div>
+            <motion.div
+              className="msg assistant"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+            >
+              <motion.div
+                className="msg-icon"
+                animate={{ boxShadow: ["0 0 0 0 rgba(124,167,255,0)", "0 0 0 6px rgba(124,167,255,0)", "0 0 0 0 rgba(124,167,255,0)"] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Bot size={16} />
+              </motion.div>
               <div>
                 <div className="msg-role">assistant</div>
                 <div className="msg-body thinking">
-                    <Loader2 size={14} className="spin" /> {stage || "Working…"}
+                    <ThinkingDots />
+                    <AnimatePresence mode="wait">
+                      <motion.span
+                        key={stage}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        {stage || "Working…"}
+                      </motion.span>
+                    </AnimatePresence>
                   </div>
                   {liveTools.length > 0 && (
                     <div className="live-tools">
-                      {liveTools.map((t, i) => (
-                        <span key={`${t.tool}-${i}`} className={t.ok === undefined ? "running" : t.ok ? "ok" : "err"}>
-                          <Wrench size={11} /> {t.tool}
-                        </span>
-                      ))}
+                      <AnimatePresence>
+                        {liveTools.map((t, i) => (
+                          <motion.span
+                            key={`${t.tool}-${i}`}
+                            className={t.ok === undefined ? "running" : t.ok ? "ok" : "err"}
+                            initial={{ opacity: 0, scale: 0.8, y: 6 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            transition={spring}
+                          >
+                            <Wrench size={11} /> {t.tool}
+                          </motion.span>
+                        ))}
+                      </AnimatePresence>
                     </div>
                   )}
               </div>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
           <div ref={endRef} />
         </div>
 
@@ -451,9 +522,18 @@ export function Chat() {
         )}
 
         {files.length > 0 && (
-          <div className="attachment-tray">
+          <motion.div className="attachment-tray" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}>
+            <AnimatePresence mode="popLayout">
             {files.map((file, index) => (
-              <span key={`${file.name}-${index}`} className="attachment-chip">
+              <motion.span
+                key={`${file.name}-${index}`}
+                className="attachment-chip"
+                layout
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={spring}
+              >
                 {file.name}
                 <button
                   type="button"
@@ -462,9 +542,10 @@ export function Chat() {
                 >
                   <X size={12} />
                 </button>
-              </span>
+              </motion.span>
             ))}
-          </div>
+            </AnimatePresence>
+          </motion.div>
         )}
 
         <form onSubmit={submit} className="composer">
@@ -507,7 +588,14 @@ export function Chat() {
               }
             }}
           />
-          <button disabled={busy || (!input.trim() && files.length === 0)}>{busy ? <Loader2 size={17} className="spin" /> : <Send size={17} />}</button>
+          <motion.button
+            className="send"
+            disabled={busy || (!input.trim() && files.length === 0)}
+            whileHover={{ scale: busy ? 1 : 1.05 }}
+            whileTap={{ scale: 0.93 }}
+          >
+            {busy ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
+          </motion.button>
         </form>
       </div>
       <Toast toast={toast} />

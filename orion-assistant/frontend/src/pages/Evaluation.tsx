@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Check, FlaskConical, Play, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { api, type EvalHistoryEntry, type EvalRun } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
 import {
   Badge,
+  Counter,
   EmptyBlock,
+  Gauge,
   ErrorBlock,
   Loading,
   PageTitle,
@@ -126,9 +129,26 @@ export function Evaluation() {
             </div>
           }
         >
+          <div className="eval-gauge">
+            <Gauge
+              value={run.pass_rate}
+              tone={run.pass_rate >= 0.9 ? "var(--ok)" : run.pass_rate >= 0.6 ? "var(--warn)" : "var(--err)"}
+            />
+            <div className="eval-gauge-label">
+              <strong><Counter value={Math.round(run.pass_rate * 100)} />%</strong>
+              <span>{run.passed} of {run.total} cases passed in {(run.duration_ms / 1000).toFixed(1)}s</span>
+            </div>
+          </div>
+
           <ul className="eval-cases">
-            {run.cases.map((c) => (
-              <li key={c.id} className={c.passed ? "ok" : "bad"}>
+            {run.cases.map((c, i) => (
+              <motion.li
+                key={c.id}
+                className={c.passed ? "ok" : "bad"}
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: Math.min(i, 12) * 0.04, duration: 0.3 }}
+              >
                 <button className="eval-case-head" onClick={() => setOpenCase(openCase === c.id ? null : c.id)}>
                   {c.passed ? <Check size={14} /> : <X size={14} />}
                   <span className="eval-case-id">{c.id}</span>
@@ -136,8 +156,16 @@ export function Evaluation() {
                   <span className="muted small">{c.duration_ms}ms</span>
                 </button>
 
+                <AnimatePresence initial={false}>
                 {openCase === c.id && (
-                  <div className="eval-case-body">
+                  <motion.div
+                    className="eval-case-body"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ overflow: "hidden" }}
+                  >
                     {c.error && <p className="mono small err-text">{c.error}</p>}
 
                     <div className="eval-checks">
@@ -157,9 +185,10 @@ export function Evaluation() {
                       <p className="muted small">Tools used: {c.tools_used.join(", ")}</p>
                     )}
                     <pre className="eval-answer">{c.answer || "(empty answer)"}</pre>
-                  </div>
+                  </motion.div>
                 )}
-              </li>
+                </AnimatePresence>
+              </motion.li>
             ))}
           </ul>
         </Panel>
