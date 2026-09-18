@@ -2,7 +2,7 @@
 # degrades with a clear message when they are absent.
 #
 #   browse_page tool      -> playwright  (then: playwright install chromium)
-#   app/tools/mcp_server  -> mcp         (optional read-only MCP surface)
+#   MCP server + client   -> mcp         (expose ORION's tools, and use others')
 #   audio attachments     -> faster-whisper (local speech-to-text, no cloud)
 #   spoken replies        -> supertonic    (local on-device TTS, ONNX)
 

@@ -109,3 +109,28 @@ class SpeakRequest(BaseModel):
 class VoiceCommandRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=2000)
     require_wake_word: bool | None = None
+
+
+class McpServerRequest(BaseModel):
+    """Register an external MCP server whose tools ORION may call."""
+
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    description: str = ""
+    transport: str = Field(default="stdio", pattern="^(stdio|http)$")
+    command: str = ""
+    url: str = ""
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    risk: str = Field(default="medium", pattern="^(low|medium|high|destructive)$")
+    requires_confirmation: bool = True
+
+
+class McpServerPatch(BaseModel):
+    description: str | None = None
+    transport: str | None = Field(default=None, pattern="^(stdio|http)$")
+    command: str | None = None
+    url: str | None = None
+    env: dict[str, str] | None = None
+    enabled: bool | None = None
+    risk: str | None = Field(default=None, pattern="^(low|medium|high|destructive)$")
+    requires_confirmation: bool | None = None

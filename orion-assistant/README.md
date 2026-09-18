@@ -100,6 +100,21 @@ model, audio is transcribed locally with faster-whisper. Anything ORION cannot r
 honestly rather than silently ignored — `GET /v1/attachments/capabilities` tells you exactly what
 the current deployment supports.
 
+### Speak to it, and let it speak back
+
+Press the microphone (or Ctrl/Cmd+Shift+V) and talk. Speech is transcribed
+locally with faster-whisper, replies are spoken by on-device Supertonic TTS, and
+you can drive the whole dashboard by voice — "open tools", "enable web search",
+"read that back". Enabling a capability always asks first; turning one off never
+does. See [docs/VOICE.md](docs/VOICE.md).
+
+### It borrows tools from other assistants
+
+ORION is both an MCP server and an MCP **client**. Point it at any Model Context
+Protocol server and its tools join the registry as `server.tool`, policy-gated
+at the risk level you assign — a remote server cannot grant itself privilege.
+See [docs/MCP.md](docs/MCP.md).
+
 ### It learns from what works
 
 Successful multi-step runs are distilled into named, reusable **skills** that are injected into
@@ -160,6 +175,13 @@ DELETE /v1/knowledge/documents/{id}     GET    /v1/automations
 GET    /v1/runs · /v1/runs/{id}         POST   /v1/automations/{id}/run
 GET    /v1/audit                        DELETE /v1/automations/{id}
 GET    /v1/settings · PATCH /v1/settings
+
+GET    /v1/personas                     GET    /v1/mcp/servers
+GET    /v1/voice/status                 POST   /v1/mcp/servers
+GET    /v1/voice/commands               PATCH  /v1/mcp/servers/{id}
+POST   /v1/voice/interpret              DELETE /v1/mcp/servers/{id}
+POST   /v1/voice/speak                  POST   /v1/mcp/servers/{id}/refresh
+POST   /v1/voice/transcribe             POST   /v1/mcp/refresh
 ```
 
 ---
@@ -170,9 +192,10 @@ GET    /v1/settings · PATCH /v1/settings
 ./scripts/run-tests.sh
 ```
 
-* 159 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 324 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
-  kill switch) and the SSE streaming contract
+  kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
+  against a live server subprocess
 * `ruff` lint clean
 * Strict TypeScript build with `noUnusedLocals` / `noUnusedParameters`
 * GitHub Actions runs backend tests, a production-dependency boot check, the frontend build and both Docker image builds

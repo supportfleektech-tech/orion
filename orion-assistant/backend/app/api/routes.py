@@ -20,6 +20,8 @@ from app.api.schemas import (
     IngestRequest,
     IngestTextRequest,
     KillSwitchRequest,
+    McpServerPatch,
+    McpServerRequest,
     MemoryRequest,
     ProvisionRequest,
     SettingsPatch,
@@ -42,11 +44,12 @@ from app.db.models import (
     Chunk,
     Conversation,
     Document,
+    McpServer,
     Memory,
     Message,
     ToolRun,
 )
-from app.services import model_manager, voice, voice_commands
+from app.services import mcp_client, model_manager, voice, voice_commands
 from app.services import skills as skills_service
 from app.services.agent_runtime import PERSONAS, audit, execute_tool, run_agent, stream_agent
 from app.services.ingestion import (
@@ -326,6 +329,109 @@ def update_conversation(conversation_id: str, patch: ConversationPatch, db: Sess
         "persona": conversation.persona,
         "system_prompt": conversation.system_prompt,
     }
+
+
+# --------------------------------------------------------------------- MCP
+
+
+def _mcp_dict(server: McpServer) -> dict:
+    return {
+        "id": server.id,
+        "name": server.name,
+        "description": server.description,
+        "transport": server.transport,
+        "command": server.command,
+        "url": server.url,
+        "env_keys": sorted((server.env or {}).keys()),  # names only; values may be secrets
+        "enabled": server.enabled,
+        "risk": server.risk,
+        "requires_confirmation": server.requires_confirmation,
+        "tools": server.tools or [],
+        "tool_count": len(server.tools or []),
+        "status": server.status,
+        "last_error": server.last_error,
+        "last_connected_at": server.last_connected_at,
+        "created_at": server.created_at,
+    }
+
+
+@router.get("/v1/mcp/servers", tags=["mcp"])
+def list_mcp_servers(db: Session = Depends(get_db)):
+    """External MCP servers ORION can borrow tools from."""
+    servers = db.query(McpServer).order_by(McpServer.name).all()
+    return {
+        "servers": [_mcp_dict(s) for s in servers],
+        "sdk_available": mcp_client.sdk_available(),
+        "sdk_hint": None
+        if mcp_client.sdk_available()
+        else "Install the MCP SDK: pip install -r backend/requirements-optional.txt",
+    }
+
+
+@router.post("/v1/mcp/servers", tags=["mcp"], dependencies=[Depends(require_auth)])
+async def create_mcp_server(req: McpServerRequest, db: Session = Depends(get_db)):
+    """Register a server, then immediately try to discover its tools."""
+    if db.query(McpServer).filter(McpServer.name == req.name).first():
+        raise HTTPException(400, f"An MCP server named '{req.name}' already exists")
+    if req.transport == "stdio" and not req.command.strip():
+        raise HTTPException(400, "stdio transport requires a command")
+    if req.transport == "http" and not req.url.strip():
+        raise HTTPException(400, "http transport requires a url")
+
+    server = McpServer(**req.model_dump())
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+
+    audit(db, "mcp.server.created", "mcp", server.name, {"transport": server.transport})
+    await mcp_client.refresh_server(db, server)
+    return _mcp_dict(server)
+
+
+@router.patch("/v1/mcp/servers/{server_id}", tags=["mcp"], dependencies=[Depends(require_auth)])
+async def update_mcp_server(server_id: str, req: McpServerPatch, db: Session = Depends(get_db)):
+    server = db.get(McpServer, server_id)
+    if not server:
+        raise HTTPException(404, "MCP server not found")
+
+    previous_name = server.name
+    for key, value in req.model_dump(exclude_unset=True).items():
+        setattr(server, key, value)
+    db.commit()
+    db.refresh(server)
+
+    # Tools are namespaced by server name, so drop the old set before re-adding.
+    mcp_client.unregister_server_tools(previous_name)
+    audit(db, "mcp.server.updated", "mcp", server.name, req.model_dump(exclude_unset=True))
+    await mcp_client.refresh_server(db, server)
+    return _mcp_dict(server)
+
+
+@router.delete("/v1/mcp/servers/{server_id}", tags=["mcp"], dependencies=[Depends(require_auth)])
+def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
+    server = db.get(McpServer, server_id)
+    if not server:
+        raise HTTPException(404, "MCP server not found")
+    removed = mcp_client.unregister_server_tools(server.name)
+    audit(db, "mcp.server.deleted", "mcp", server.name, {"tools_removed": removed})
+    db.delete(server)
+    db.commit()
+    return {"deleted": True, "tools_removed": removed}
+
+
+@router.post("/v1/mcp/servers/{server_id}/refresh", tags=["mcp"], dependencies=[Depends(require_auth)])
+async def refresh_mcp_server(server_id: str, db: Session = Depends(get_db)):
+    """Reconnect and re-discover tools. Errors are reported, never raised."""
+    server = db.get(McpServer, server_id)
+    if not server:
+        raise HTTPException(404, "MCP server not found")
+    await mcp_client.refresh_server(db, server)
+    return _mcp_dict(server)
+
+
+@router.post("/v1/mcp/refresh", tags=["mcp"], dependencies=[Depends(require_auth)])
+async def refresh_all_mcp_servers(db: Session = Depends(get_db)):
+    return await mcp_client.refresh_all(db)
 
 
 @router.get("/v1/personas", tags=["chat"])

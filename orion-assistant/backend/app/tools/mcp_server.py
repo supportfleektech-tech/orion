@@ -19,20 +19,25 @@ from __future__ import annotations
 import asyncio
 import sys
 
+# The SDK renamed FastMCP to MCPServer in 2.0. Support both so this works
+# whichever major version the user has installed.
 try:
-    from mcp.server.fastmcp import FastMCP
-except ImportError:  # pragma: no cover - optional dependency
-    print(
-        'The MCP SDK is not installed. Run:  pip install "mcp>=1.10"',
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from None
+    from mcp.server.mcpserver import MCPServer as _Server  # mcp >= 2
+except ImportError:  # pragma: no cover - depends on installed version
+    try:
+        from mcp.server.fastmcp import FastMCP as _Server  # mcp 1.x
+    except ImportError:  # pragma: no cover - optional dependency
+        print(
+            'The MCP SDK is not installed. Run:  pip install "mcp>=1.10"',
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
 
 from app.db.database import SessionLocal, init_db
 from app.services.ingestion import search_chunks
 from app.services.memory import retrieve_memories
 
-mcp = FastMCP("orion-safe-tools")
+mcp = _Server("orion-safe-tools")
 
 
 @mcp.tool()

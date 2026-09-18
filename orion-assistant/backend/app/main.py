@@ -13,6 +13,7 @@ from app.api.routes import router
 from app.core.config import settings
 from app.core.security import rate_limit
 from app.db.database import SessionLocal, init_db
+from app.services import mcp_client
 from app.services.runtime_settings import load_overrides
 from app.tools import builtin  # noqa: F401  (registers builtin tools)
 from app.workers.scheduler import scheduler
@@ -35,6 +36,15 @@ async def lifespan(_: FastAPI):
         load_overrides(db)
     except Exception:  # never block boot on settings
         log.exception("Failed to load persisted settings; using environment defaults")
+
+    try:
+        # Registers cached MCP tools without connecting, so boot never waits
+        # on an external process. Use /v1/mcp/refresh to re-discover.
+        count = mcp_client.load_all(db)
+        if count:
+            log.info("Registered %d tool(s) from external MCP servers", count)
+    except Exception:
+        log.exception("Failed to load MCP tools; continuing without them")
     finally:
         db.close()
 

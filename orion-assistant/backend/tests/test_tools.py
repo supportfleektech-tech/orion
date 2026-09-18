@@ -46,11 +46,28 @@ def test_kill_switch_blocks_everything():
 
 
 def test_optional_deps_are_not_imported_at_boot():
-    """playwright/mcp are optional; importing the app must not require them."""
-    import sys
+    """playwright/mcp are optional; importing the app must not require them.
 
-    assert "playwright" not in sys.modules
-    assert "mcp" not in sys.modules
+    Checked in a fresh interpreter: other tests in this suite legitimately
+    import the optional SDKs, so the current process's sys.modules says
+    nothing about what booting the app actually pulls in.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import app.main, sys; "
+         "print([m for m in ('playwright', 'mcp') if m in sys.modules])"],
+        cwd=backend,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith("[]"), f"optional deps imported at boot: {result.stdout}"
 
 
 def test_browser_tool_reports_missing_dependency_cleanly(monkeypatch):

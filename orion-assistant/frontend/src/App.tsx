@@ -13,6 +13,7 @@ import { Observability } from "./pages/Observability";
 import { Settings } from "./pages/Settings";
 import { Models } from "./pages/Models";
 import { Skills } from "./pages/Skills";
+import { Mcp } from "./pages/Mcp";
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/observability" element={<Observability />} />
             <Route path="/models" element={<Models />} />
             <Route path="/skills" element={<Skills />} />
+            <Route path="/mcp" element={<Mcp />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

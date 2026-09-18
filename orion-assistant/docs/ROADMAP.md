@@ -5,23 +5,24 @@
 Complete assistant: chat, agent loop, memory, RAG, governed tools, approvals, kill switch,
 automations, observability, settings, Docker deployment and CI.
 
-## v1.1 — depth
+## v1.1 — depth — shipped
 
-* Token-level streaming from provider to UI (the SSE channel already exists)
-* Reranking pass over retrieved chunks
-* Alembic migrations for non-additive schema changes
-* Per-conversation system prompts and personas
+* ✅ Token-level streaming from provider to UI
+* ✅ Reranking pass over retrieved chunks
+* ✅ Alembic migrations, applied automatically on boot
+* ✅ Per-conversation system prompts and personas
 
 ## v1.2 — reach
 
-* MCP client so ORION can consume external MCP servers
+* ✅ MCP client so ORION can consume external MCP servers (see `MCP.md`)
 * OAuth connector framework with encrypted secret storage
 * Cron-expression scheduling in addition to intervals
 * Evaluation harness with regression fixtures and scoring
 
 ## v1.3 — surfaces
 
-* Voice input/output (local Whisper + Piper)
+* ✅ Voice input/output — local faster-whisper in, on-device Supertonic out,
+  plus spoken control of the dashboard (see `VOICE.md`)
 * Desktop shell (Tauri)
 * Multi-agent planner/executor/verifier split with shared scratchpad
 

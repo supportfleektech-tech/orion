@@ -431,6 +431,49 @@ export async function chatStream(
   return conversation;
 }
 
+export interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  description: string;
+  transport: "stdio" | "http";
+  command: string;
+  url: string;
+  env_keys: string[];
+  enabled: boolean;
+  risk: "low" | "medium" | "high" | "destructive";
+  requires_confirmation: boolean;
+  tools: McpTool[];
+  tool_count: number;
+  status: "unknown" | "ok" | "error" | "disabled";
+  last_error: string | null;
+  last_connected_at: string | null;
+  created_at: string;
+}
+
+export interface McpServerList {
+  servers: McpServerInfo[];
+  sdk_available: boolean;
+  sdk_hint: string | null;
+}
+
+export interface McpServerInput {
+  name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  url?: string;
+  env?: Record<string, string>;
+  enabled?: boolean;
+  risk?: string;
+  requires_confirmation?: boolean;
+}
+
 export const api = {
   status: () => get<SystemStatus>("/v1/system/status"),
   metrics: () => get<Metrics>("/v1/system/metrics"),
@@ -556,6 +599,14 @@ export const api = {
     }
     return response.blob();
   },
+
+  mcpServers: () => get<McpServerList>("/v1/mcp/servers"),
+  createMcpServer: (body: McpServerInput) => post<McpServerInfo>("/v1/mcp/servers", body),
+  updateMcpServer: (id: string, body: Partial<McpServerInput>) =>
+    patch_<McpServerInfo>(`/v1/mcp/servers/${id}`, body),
+  deleteMcpServer: (id: string) => del<{ deleted: boolean; tools_removed: number }>(`/v1/mcp/servers/${id}`),
+  refreshMcpServer: (id: string) => post<McpServerInfo>(`/v1/mcp/servers/${id}/refresh`, {}),
+  refreshMcp: () => post<{ servers: unknown[]; sdk_available: boolean }>("/v1/mcp/refresh", {}),
 
   personas: () => get<{ personas: { id: string; label: string; description: string }[] }>("/v1/personas"),
 

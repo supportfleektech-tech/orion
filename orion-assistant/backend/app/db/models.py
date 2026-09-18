@@ -229,3 +229,41 @@ class Feedback(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class McpServer(Base):
+    """An external MCP server whose tools ORION can call.
+
+    ORION is both an MCP server (exposing its own safe tools) and an MCP
+    client. This table is the client side: each row is a remote tool server
+    the assistant may connect to. Tools discovered from a server are namespaced
+    as ``<server>.<tool>`` so they cannot collide with builtins, and they run
+    through the same policy gate as everything else -- a remote server cannot
+    grant itself more privilege than its configured risk level.
+    """
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+
+    # "stdio" launches a local process; "http" talks to a streamable HTTP endpoint.
+    transport: Mapped[str] = mapped_column(String(20), default="stdio")
+    command: Mapped[str] = mapped_column(Text, default="")       # stdio: argv, shell-quoted
+    url: Mapped[str] = mapped_column(Text, default="")           # http: endpoint
+    env: Mapped[dict] = mapped_column(JSON, default=dict)        # extra environment for stdio
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Risk assigned to every tool from this server; drives the policy gate.
+    risk: Mapped[str] = mapped_column(String(20), default="medium")
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Discovery results, refreshed on connect.
+    tools: Mapped[dict] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default="unknown")  # unknown|ok|error|disabled
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
