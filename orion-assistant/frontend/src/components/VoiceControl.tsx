@@ -290,6 +290,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             <p>{pending.label}</p>
             <div className="row-actions">
               <button
+                className="primary"
                 onClick={() => {
                   const command = pending.command;
                   setPending(null);

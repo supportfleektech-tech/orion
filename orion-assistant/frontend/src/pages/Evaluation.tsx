@@ -91,7 +91,7 @@ export function Evaluation() {
           right={
             <div className="row-actions">
               <Badge tone="info">{suite.case_count} cases</Badge>
-              <button disabled={running !== null || Boolean(suite.error)} onClick={() => start(suite.name)}>
+              <button className="primary" disabled={running !== null || Boolean(suite.error)} onClick={() => start(suite.name)}>
                 <Play size={13} /> {running === suite.name ? "Running…" : "Run"}
               </button>
             </div>

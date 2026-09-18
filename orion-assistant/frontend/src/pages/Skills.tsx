@@ -154,7 +154,7 @@ export function Skills() {
                 onChange={(e) => setDraft({ ...draft, instructions: e.target.value })}
               />
             </div>
-            <button type="submit">Save skill</button>
+            <button className="primary" type="submit">Save skill</button>
           </form>
         </Panel>
       </div>

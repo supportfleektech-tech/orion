@@ -22,7 +22,9 @@
   --text: #eef2f7;
   --text-dim: #aab6c7;
   --muted: #7f8c9f;
-  --muted-deep: #5d6878;
+  /* Lightened to clear WCAG AA (4.5:1) on panel surfaces: this token
+     is used for real body copy such as empty states and hints. */
+  --muted-deep: #768191;
 
   /* ------------------------------------------------------------ accent */
   --accent: #7ca7ff;

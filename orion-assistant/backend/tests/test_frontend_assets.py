@@ -103,3 +103,65 @@ def test_motion_library_is_declared():
 
     pkg = json.loads((FRONTEND.parent / "package.json").read_text())
     assert "framer-motion" in pkg["dependencies"]
+
+
+# ------------------------------------------------------------------ contrast
+def _luminance(hex_colour: str) -> float:
+    channels = [int(hex_colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _luminance(a), _luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+# The effective panel colour once the gradient sits over the backdrop.
+PANEL = "#101722"
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["--text", "--text-dim", "--muted", "--muted-deep", "--accent", "--ok", "--warn", "--err", "--info"],
+)
+def test_text_tokens_meet_wcag_aa(token):
+    """Every colour used for text must clear 4.5:1 on a panel.
+
+    Dark themes make it easy to pick a grey that looks tasteful in a mockup and
+    is unreadable on a laptop at an angle. --muted-deep was 3.18:1 and is used
+    for real copy (empty states, palette hints), so it was lightened.
+    """
+    tokens = (STYLE_DIR / "tokens.css").read_text()
+    match = re.search(rf"{token}:\s*(#[0-9a-fA-F]{{6}})", tokens)
+    assert match, f"{token} is not defined as a hex colour"
+
+    ratio = _contrast(match.group(1), PANEL)
+    assert ratio >= 4.5, f"{token} is {ratio:.2f}:1 on panels, below the 4.5:1 AA floor"
+
+
+def test_buttons_are_styled():
+    """A <button> with no class renders as a raw browser button.
+
+    It type-checks, it builds, and it looks broken -- a grey OS-native control
+    in the middle of a dark themed page. This found four, including the
+    primary action on the MCP form and the Confirm in the voice dialog.
+    """
+    # These are styled by a parent selector rather than their own class.
+    parent_styled = {".convo-item > button", ".attachment-chip button"}
+    assert all(sel in all_css() for sel in parent_styled), "parent-scoped button styles went missing"
+
+    offenders: list[str] = []
+    for path in list(FRONTEND.glob("pages/*.tsx")) + list(FRONTEND.glob("components/*.tsx")):
+        source = path.read_text()
+        for match in re.finditer(r"<button\b([^>]*)>", source):
+            if "className" in match.group(1):
+                continue
+            line = source[: match.start()].count("\n") + 1
+            # Allow the two parent-styled cases, identified by their container.
+            context = source[max(0, match.start() - 400) : match.start()]
+            if "convo-item" in context or "attachment-chip" in context:
+                continue
+            offenders.append(f"{path.name}:{line}")
+
+    assert not offenders, f"unstyled buttons: {offenders}"

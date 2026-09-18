@@ -32,7 +32,7 @@
 | Automations | ✅ | Scheduler, manual run, history |
 | Observability | ✅ | Runs, traces, tool history, metrics |
 | Evaluation harness | ✅ | YAML suites graded deterministically against the live agent, with run history |
-| Design system | ✅ | Tokenised colour, motion, elevation; four-layer stylesheet |
+| Design system | ✅ | Tokenised colour, motion, elevation; four-layer stylesheet; WCAG AA contrast enforced by test |
 | Motion | ✅ | Route transitions, staggered lists, shared-element nav, respects `prefers-reduced-motion` |
 | Command palette | ✅ | `Ctrl/Cmd+K` fuzzy search over pages and actions; unmatched text goes to chat |
 | Keyboard shortcuts | ✅ | `?` overlay; palette, voice and chat bindings |
@@ -47,7 +47,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 383 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+| Tests | ✅ | 395 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

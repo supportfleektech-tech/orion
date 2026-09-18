@@ -97,7 +97,7 @@ export function Mcp() {
             >
               <RefreshCw size={14} /> Refresh all
             </button>
-            <button onClick={() => setDraft(draft ? null : { ...BLANK })}>
+            <button className="primary" onClick={() => setDraft(draft ? null : { ...BLANK })}>
               <Plus size={14} /> Add server
             </button>
           </>
@@ -196,7 +196,7 @@ export function Mcp() {
           </div>
 
           <div className="row-actions">
-            <button disabled={busy === "new"} onClick={create}>
+            <button className="primary" disabled={busy === "new"} onClick={create}>
               {busy === "new" ? "Connecting…" : "Add and connect"}
             </button>
             <button className="ghost" onClick={() => setDraft(null)}>
