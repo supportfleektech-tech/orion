@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse
 from app.api.routes import router
 from app.core.config import settings
 from app.core.security import rate_limit
-from app.db.database import init_db
+from app.db.database import SessionLocal, init_db
+from app.services.runtime_settings import load_overrides
 from app.tools import builtin  # noqa: F401  (registers builtin tools)
 from app.workers.scheduler import scheduler
 
@@ -28,6 +29,15 @@ async def lifespan(_: FastAPI):
     init_db()
     log.info("ORION %s starting (env=%s, db=%s)", settings.app_version, settings.environment,
              settings.database_url.split("://")[0])
+
+    db = SessionLocal()
+    try:
+        load_overrides(db)
+    except Exception:  # never block boot on settings
+        log.exception("Failed to load persisted settings; using environment defaults")
+    finally:
+        db.close()
+
     await scheduler.start()
     try:
         yield

@@ -47,6 +47,7 @@ from app.services.ingestion import (
 )
 from app.services.memory import delete_memory, list_memories, pin_memory, retrieve_memories, write_memory
 from app.services.model_router import router as model_router
+from app.services.runtime_settings import save_overrides
 from app.tools.registry import registry
 
 router = APIRouter()
@@ -538,10 +539,14 @@ def get_settings_endpoint():
 
 @router.patch("/v1/settings", tags=["settings"], dependencies=[Depends(require_auth)])
 def patch_settings(patch: SettingsPatch, db: Session = Depends(get_db)):
-    changes = {k: v for k, v in patch.model_dump(exclude_none=True).items()}
-    for key, value in changes.items():
-        setattr(settings, key, value)
-    audit(db, "settings.updated", f"Updated {', '.join(changes) or 'nothing'}", changes, actor="user")
+    changes = dict(patch.model_dump(exclude_none=True).items())
+    if not changes:
+        return {"updated": {}, **get_settings_endpoint()}
+    try:
+        save_overrides(db, changes)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    audit(db, "settings.updated", f"Updated {', '.join(sorted(changes))}", changes, actor="user")
     return {"updated": changes, **get_settings_endpoint()}
 
 

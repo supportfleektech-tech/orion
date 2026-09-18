@@ -52,6 +52,17 @@ docker compose up -d --build
 Schema changes are additive and applied by `init_db()`. For destructive schema changes, back up
 first and introduce Alembic.
 
+## Tuning behaviour
+
+The live system prompt is `backend/app/prompts/system.md`. Edit it and restart the API to change how
+ORION behaves — no code change required. It ships inside the image, so when using Docker either
+rebuild or bind-mount the file.
+
+Runtime flags changed via the Settings page or `PATCH /v1/settings` are persisted to the `settings`
+table and re-applied on boot (look for `Applied N persisted setting override(s)` in the log).
+Secrets, bind addresses and `DATABASE_URL` are deliberately **not** runtime-mutable; they come from
+the environment only.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

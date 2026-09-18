@@ -20,7 +20,7 @@
 | Audit log | ✅ | All governed events |
 | Automations | ✅ | Scheduler, manual run, history |
 | Observability | ✅ | Runs, traces, tool history, metrics |
-| Live settings | ✅ | Flags, models, loop limits |
+| Live settings | ✅ | Flags, models, loop limits; persisted across restarts |
 | Web search | ✅ | SearXNG adapter (opt-in) |
 | HTTP / page fetch | ✅ | Allowlisted (opt-in) |
 | Shell sandbox | ✅ | Denylist, timeout, confined cwd (opt-in) |
@@ -30,7 +30,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 28 backend tests, ruff clean, strict TS |
+| Tests | ✅ | 44 backend tests, ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

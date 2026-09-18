@@ -20,6 +20,10 @@ jobs:
       - run: ruff check app tests
       - run: pytest -q
 
+      - name: Verify production dependency set boots
+        working-directory: orion-assistant
+        run: ./scripts/verify-prod-deps.sh
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

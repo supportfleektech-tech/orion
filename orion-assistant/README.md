@@ -21,7 +21,7 @@ governance, automations, Docker packaging and CI are all implemented and tested.
 | **Policy & approvals** | Risk tiers, capability flags, approval queue, global kill switch, full audit log |
 | **Automations** | Recurring agent tasks with an in-process scheduler, manual run and result history |
 | **Observability** | Agent run traces, tool run history, success rates, latency, router statistics |
-| **Settings** | Live runtime configuration of flags, models and loop limits |
+| **Settings** | Live runtime configuration of flags, models and loop limits, persisted across restarts |
 
 ### Works offline, always
 
@@ -91,6 +91,9 @@ React + TypeScript UI  ──►  FastAPI  ──►  Agent Runtime
   `postgresql+psycopg://…` for Postgres + pgvector at scale. Schema is created automatically on boot.
 * **Embeddings** — `nomic-embed-text` via Ollama when available, otherwise a deterministic hashed
   bag-of-ngrams embedder so retrieval never breaks.
+* **Optional extras** — `playwright` (browser tool) and `mcp` (read-only MCP surface) are *not*
+  required. Their imports are guarded, and CI asserts the app boots without them. Install from
+  `backend/requirements-optional.txt` only if you need those capabilities.
 * **Safety** — every tool declares a risk tier. `high` and `destructive` tools create an approval
   request instead of executing. Category flags (`shell`, `browser`, `network`, web search) are off by
   default. A global kill switch halts all tool use instantly. Everything is audited.
@@ -132,10 +135,10 @@ GET    /v1/settings · PATCH /v1/settings
 ./scripts/run-tests.sh
 ```
 
-* 28 backend tests (API integration, retrieval, memory, tools, policy, ingestion)
+* 44 backend tests (API integration, retrieval, memory, tools, policy, ingestion, auth, settings persistence, prompt loading)
 * `ruff` lint clean
 * Strict TypeScript build with `noUnusedLocals` / `noUnusedParameters`
-* GitHub Actions runs backend tests, frontend build and both Docker image builds
+* GitHub Actions runs backend tests, a production-dependency boot check, the frontend build and both Docker image builds
 
 ---
 
@@ -153,7 +156,7 @@ GET    /v1/settings · PATCH /v1/settings
 
 ```
 orion-assistant/
-├── backend/          FastAPI service (app/{api,core,db,services,tools,workers}) + tests
+├── backend/          FastAPI service (app/{api,core,db,services,tools,workers,prompts}) + tests
 ├── frontend/         React + TypeScript UI (9 fully wired pages)
 ├── scripts/          bootstrap, dev, tests, healthcheck, ingest
 ├── docs/             architecture, API, security, operations, roadmap

@@ -6,7 +6,7 @@
 ./scripts/run-tests.sh
 ```
 
-28 backend tests covering:
+44 backend tests covering:
 
 * **API integration** — health, status, tools, chat, conversations, memory, knowledge, settings,
   kill switch, automations, metrics, audit, and the full approval flow (request → approve → execute)
@@ -14,7 +14,12 @@
   memory upsert-by-key semantics
 * **Ingestion** — chunking with overlap, empty input, format support, unsupported-type rejection
 * **Tools and policy** — arithmetic allowlist, injection rejection, exponent bounds, registry
-  schema generation, risk-tier approval requirement, kill-switch enforcement
+  schema generation, risk-tier approval requirement, kill-switch enforcement, and the guarantee that
+  optional dependencies (playwright, mcp) are never imported at boot
+* **Auth** — token required/rejected/accepted, malformed headers, protection of destructive
+  endpoints, and reads staying public
+* **Configuration** — runtime setting overrides persist across restarts; secrets are not mutable
+* **Prompt** — the system prompt loads from `app/prompts/system.md` and covers injection and secrets
 
 Frontend quality is enforced by a strict TypeScript build (`noUnusedLocals`,
 `noUnusedParameters`) and lint by `ruff` on the backend. CI runs all of it plus both Docker builds.

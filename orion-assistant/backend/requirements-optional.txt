@@ -1,0 +1,8 @@
+# Optional extras. NOT required to run ORION — the code guards these imports and
+# degrades with a clear message when they are absent.
+#
+#   browse_page tool      -> playwright  (then: playwright install chromium)
+#   app/tools/mcp_server  -> mcp         (optional read-only MCP surface)
+
+playwright>=1.47,<2
+mcp>=1.10,<3
