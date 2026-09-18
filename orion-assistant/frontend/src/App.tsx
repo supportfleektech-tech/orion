@@ -10,6 +10,8 @@ import { Automations } from "./pages/Automations";
 import { Security } from "./pages/Security";
 import { Observability } from "./pages/Observability";
 import { Settings } from "./pages/Settings";
+import { Models } from "./pages/Models";
+import { Skills } from "./pages/Skills";
 
 export default function App() {
   return (
@@ -27,6 +29,8 @@ export default function App() {
             <Route path="/automations" element={<Automations />} />
             <Route path="/security" element={<Security />} />
             <Route path="/observability" element={<Observability />} />
+            <Route path="/models" element={<Models />} />
+            <Route path="/skills" element={<Skills />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

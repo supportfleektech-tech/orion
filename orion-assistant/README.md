@@ -75,14 +75,37 @@ chat-completions protocol including tool calling, so you can exercise the comple
 (tool selection → execution → result → answer) with no download and no API key. Ask it to
 calculate something, check the time, list files, or search memory.
 
-### Enable generative answers
+### Install a real local model
 
 ```bash
-ollama pull qwen3:4b          # or llama3.2:1b on low-memory machines
-ollama pull nomic-embed-text  # better embeddings than the built-in fallback
+./scripts/setup-local-model.sh
 ```
 
+Detects your RAM and disk, installs Ollama, picks the best model your machine can actually run,
+pulls it plus the embedder, and writes the settings into `.env`. On an 8 GB machine that is
+**`qwen3.5:4b`** — multimodal, 256K context, native tool calling, Apache 2.0.
+
+The **Models** page shows your hardware, the full catalog sized against it, download progress,
+and whether the active model supports vision. Auto-selection only picks models with tool
+calling, since ORION is an agent. Full details, including an airgapped GGUF path for networks
+that block the model registry, are in [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
+
 Or set `OPENROUTER_API_KEY` in `.env` to use free cloud routing.
+
+### Talk to it in any format
+
+`POST /v1/chat/upload` (and the paperclip button in Chat) accepts images, PDFs, Word, Excel,
+PowerPoint, audio, code and plain text. Documents are text-extracted, images go to the vision
+model, audio is transcribed locally with faster-whisper. Anything ORION cannot read is reported
+honestly rather than silently ignored — `GET /v1/attachments/capabilities` tells you exactly what
+the current deployment supports.
+
+### It learns from what works
+
+Successful multi-step runs are distilled into named, reusable **skills** that are injected into
+later prompts when they match. Skills gain confidence when they work and are auto-disabled after
+repeated failures. Everything is plain text you can read, edit or delete on the **Skills** page.
+Thumbs up/down in chat feeds back into the same loop. Disable with `SKILL_LEARNING_ENABLED=false`.
 
 ---
 
@@ -147,7 +170,7 @@ GET    /v1/settings · PATCH /v1/settings
 ./scripts/run-tests.sh
 ```
 
-* 69 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 159 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch) and the SSE streaming contract
 * `ruff` lint clean

@@ -5,6 +5,9 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{tempfile.mkdtemp()}/test.db")
 os.environ.setdefault("KNOWLEDGE_DIR", tempfile.mkdtemp())
 os.environ.setdefault("OFFLINE_FALLBACK_ENABLED", "true")
 os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "0")
+# Skill distillation makes an extra model call per run; tests that exercise it
+# enable it explicitly so other tests can assert exact call counts.
+os.environ.setdefault("SKILL_LEARNING_ENABLED", "false")
 
 import pytest
 from fastapi.testclient import TestClient

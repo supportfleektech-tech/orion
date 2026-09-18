@@ -115,3 +115,35 @@ CREATE TABLE IF NOT EXISTS audit_events (
     details JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Learned procedures. ORION distils successful multi-step runs into reusable
+-- skills and injects the relevant ones into later prompts.
+CREATE TABLE IF NOT EXISTS skills (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    trigger_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+    source TEXT NOT NULL DEFAULT 'learned',
+    status TEXT NOT NULL DEFAULT 'active',
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    uses INTEGER NOT NULL DEFAULT 0,
+    successes INTEGER NOT NULL DEFAULT 0,
+    failures INTEGER NOT NULL DEFAULT 0,
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_skills_status ON skills (status);
+
+-- User signal on answers; drives skill confidence over time.
+CREATE TABLE IF NOT EXISTS feedback (
+    id BIGSERIAL PRIMARY KEY,
+    run_id UUID,
+    message_id UUID,
+    rating TEXT NOT NULL,
+    comment TEXT,
+    applied BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_run ON feedback (run_id);

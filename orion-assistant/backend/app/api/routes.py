@@ -5,8 +5,8 @@ import logging
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -15,11 +15,15 @@ from app.api.schemas import (
     AutomationRequest,
     ChatRequest,
     ConversationPatch,
+    FeedbackRequest,
     IngestRequest,
     IngestTextRequest,
     KillSwitchRequest,
     MemoryRequest,
+    ProvisionRequest,
     SettingsPatch,
+    SkillRequest,
+    SkillStatusRequest,
     ToolRunRequest,
     ToolToggleRequest,
 )
@@ -39,6 +43,8 @@ from app.db.models import (
     Message,
     ToolRun,
 )
+from app.services import model_manager
+from app.services import skills as skills_service
 from app.services.agent_runtime import audit, execute_tool, run_agent, stream_agent
 from app.services.ingestion import (
     delete_document,
@@ -50,6 +56,13 @@ from app.services.ingestion import (
 )
 from app.services.memory import delete_memory, list_memories, pin_memory, retrieve_memories, write_memory
 from app.services.model_router import router as model_router
+from app.services.multimodal import (
+    AUDIO_SUFFIXES,
+    IMAGE_SUFFIXES,
+    TEXT_SUFFIXES,
+    VIDEO_SUFFIXES,
+    process_upload,
+)
 from app.services.runtime_settings import save_overrides
 from app.tools.registry import registry
 
@@ -142,6 +155,11 @@ def metrics(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------- chat
 @router.post("/v1/chat", tags=["chat"], dependencies=[Depends(require_auth)])
 async def chat(req: ChatRequest, db: Session = Depends(get_db)):
+    return await _run_chat(req, db)
+
+
+async def _run_chat(req: ChatRequest, db: Session, attachments: list | None = None) -> dict:
+    """Shared chat implementation for both the JSON and multipart endpoints."""
     conversation = db.get(Conversation, req.conversation_id) if req.conversation_id else None
     if conversation is None:
         conversation = Conversation(title=req.message[:80] or "New conversation")
@@ -150,12 +168,20 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         db.add(conversation)
         db.commit()
 
-    db.add(Message(conversation_id=conversation.id, role="user", content=req.message))
+    db.add(
+        Message(
+            conversation_id=conversation.id,
+            role="user",
+            content=req.message,
+            meta={"attachments": [a.to_public() for a in attachments]} if attachments else {},
+        )
+    )
     conversation.updated_at = datetime.now(UTC)
     db.commit()
 
     out = await run_agent(
-        db, req.message, conversation_id=conversation.id, mode=req.mode, auto_approve=req.auto_approve
+        db, req.message, conversation_id=conversation.id, mode=req.mode,
+        auto_approve=req.auto_approve, attachments=attachments,
     )
     db.add(
         Message(
@@ -611,3 +637,206 @@ def kill_switch(req: KillSwitchRequest, db: Session = Depends(get_db)):
 @router.get("/v1/security/kill-switch", tags=["security"])
 def kill_switch_status():
     return kill_switch_state()
+
+
+# --------------------------------------------------------------------- models
+@router.get("/v1/models/status", tags=["models"])
+async def models_status():
+    """Everything about the local model stack: hardware, what's installed, what fits."""
+    return await model_manager.status()
+
+
+@router.get("/v1/models/hardware", tags=["models"])
+def models_hardware():
+    return model_manager.hardware_report()
+
+
+@router.get("/v1/models/catalog", tags=["models"])
+def models_catalog():
+    """The tier ladder, annotated with whether each tier fits this machine."""
+    report = model_manager.hardware_report()
+    return {"recommended": report["recommended"], "tiers": report["tiers"]}
+
+
+@router.post("/v1/models/provision", tags=["models"], dependencies=[Depends(require_auth)])
+async def models_provision(req: ProvisionRequest, db: Session = Depends(get_db)):
+    """Download a model via Ollama. Long-running; poll /v1/models/status for progress."""
+    result = await model_manager.provision(req.model, include_embeddings=req.include_embeddings)
+    audit(
+        db,
+        "models.provision",
+        f"Provision {result.get('model')} -> ok={result.get('ok')}",
+        result,
+        actor="user",
+    )
+    if not result.get("ok"):
+        return JSONResponse(status_code=503, content=result)
+    return result
+
+
+# --------------------------------------------------------------------- skills
+@router.get("/v1/skills", tags=["skills"])
+def list_skills_endpoint(
+    status: str | None = Query(default=None, pattern="^(active|disabled|candidate)$"),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return {"skills": skills_service.list_skills(db, status=status, limit=limit)}
+
+
+@router.post("/v1/skills", tags=["skills"], dependencies=[Depends(require_auth)])
+def create_skill_endpoint(req: SkillRequest, db: Session = Depends(get_db)):
+    skill = skills_service.upsert_skill(
+        db,
+        name=req.name,
+        description=req.description,
+        instructions=req.instructions,
+        trigger_keywords=req.trigger_keywords,
+        source="user",
+        status=req.status,
+        confidence=0.7,
+    )
+    audit(db, "skill.created", f"Skill '{skill['name']}' saved", {"id": skill["id"]}, actor="user")
+    return skill
+
+
+@router.get("/v1/skills/relevant", tags=["skills"])
+def relevant_skills_endpoint(q: str = Query(min_length=1), db: Session = Depends(get_db)):
+    """Preview which learned skills would be injected for a given request."""
+    return {"query": q, "skills": skills_service.relevant_skills(db, q)}
+
+
+@router.get("/v1/skills/{skill_id}", tags=["skills"])
+def get_skill_endpoint(skill_id: str, db: Session = Depends(get_db)):
+    skill = skills_service.get_skill(db, skill_id)
+    if not skill:
+        raise HTTPException(404, "Skill not found")
+    return skill
+
+
+@router.patch("/v1/skills/{skill_id}", tags=["skills"], dependencies=[Depends(require_auth)])
+def patch_skill_endpoint(skill_id: str, req: SkillStatusRequest, db: Session = Depends(get_db)):
+    skill = skills_service.set_status(db, skill_id, req.status)
+    if not skill:
+        raise HTTPException(404, "Skill not found")
+    return skill
+
+
+@router.delete("/v1/skills/{skill_id}", tags=["skills"], dependencies=[Depends(require_auth)])
+def delete_skill_endpoint(skill_id: str, db: Session = Depends(get_db)):
+    if not skills_service.delete_skill(db, skill_id):
+        raise HTTPException(404, "Skill not found")
+    return {"deleted": skill_id}
+
+
+# ------------------------------------------------------------------- feedback
+@router.post("/v1/feedback", tags=["feedback"])
+def submit_feedback(req: FeedbackRequest, db: Session = Depends(get_db)):
+    """Thumbs up/down on an answer. Drives skill confidence over time."""
+    entry = skills_service.record_feedback(
+        db, rating=req.rating, run_id=req.run_id, message_id=req.message_id, comment=req.comment
+    )
+    if req.run_id:
+        run = db.get(AgentRun, req.run_id)
+        if run and run.trace:
+            used = [t.get("skill_ids") for t in run.trace if isinstance(t, dict) and t.get("skill_ids")]
+            flat = [sid for group in used for sid in group]
+            if flat:
+                skills_service.record_use(db, flat, req.rating == "up")
+    return entry
+
+
+@router.get("/v1/feedback/stats", tags=["feedback"])
+def feedback_stats_endpoint(db: Session = Depends(get_db)):
+    return skills_service.feedback_stats(db)
+
+
+# ---------------------------------------------------------------- attachments
+@router.post("/v1/attachments/inspect", tags=["chat"])
+async def inspect_attachment(file: UploadFile = File(...)):
+    """Process a file the way chat would, so the UI can preview how it was read."""
+    data = await file.read()
+    limit = settings.max_upload_mb * 1024 * 1024
+    if len(data) > limit:
+        raise HTTPException(413, f"File exceeds the {settings.max_upload_mb} MB upload limit")
+    attachment = process_upload(data, file.filename or "upload")
+    return attachment.to_public()
+
+
+@router.get("/v1/attachments/capabilities", tags=["chat"])
+def attachment_capabilities():
+    """What input formats this deployment can actually handle right now."""
+    try:
+        import faster_whisper  # noqa: F401
+
+        audio_ready = True
+    except ImportError:
+        audio_ready = False
+    model = settings.ollama_model
+    vision = any(tag.strip() and tag.strip() in model.lower() for tag in settings.vision_models.split(","))
+    return {
+        "active_model": model,
+        "max_upload_mb": settings.max_upload_mb,
+        "formats": {
+            "text": {"supported": True, "extensions": sorted(TEXT_SUFFIXES), "how": "read directly"},
+            "documents": {
+                "supported": True,
+                "extensions": [".pdf", ".docx", ".pptx", ".xlsx", ".xls"],
+                "how": "text extracted (no OCR for scanned pages)",
+            },
+            "images": {
+                "supported": vision,
+                "extensions": sorted(IMAGE_SUFFIXES),
+                "how": "sent to the vision model" if vision else
+                       f"'{model}' has no vision; switch to a multimodal model such as qwen3.5:4b",
+            },
+            "audio": {
+                "supported": audio_ready,
+                "extensions": sorted(AUDIO_SUFFIXES),
+                "how": "transcribed locally with faster-whisper" if audio_ready else
+                       "install backend/requirements-optional.txt to enable transcription",
+            },
+            "video": {
+                "supported": False,
+                "extensions": sorted(VIDEO_SUFFIXES),
+                "how": "accepted but not analysed; upload a key frame or the audio track",
+            },
+        },
+    }
+
+
+@router.post("/v1/chat/upload", tags=["chat"], dependencies=[Depends(require_auth)])
+async def chat_with_files(
+    message: str = Form(""),
+    conversation_id: str | None = Form(default=None),
+    mode: str = Form(default="auto"),
+    auto_approve: bool = Form(default=False),
+    files: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    """Chat with attachments: images, audio, PDFs, Office docs, code, plain text.
+
+    Each file is processed into something the model can use -- pixels for vision
+    models, extracted text or a transcript otherwise -- and how it was handled is
+    reported back so nothing is silently ignored.
+    """
+    if not message.strip() and not files:
+        raise HTTPException(400, "Provide a message, at least one file, or both")
+
+    limit = settings.max_upload_mb * 1024 * 1024
+    attachments = []
+    for upload in files:
+        data = await upload.read()
+        if len(data) > limit:
+            raise HTTPException(413, f"'{upload.filename}' exceeds the {settings.max_upload_mb} MB upload limit")
+        attachments.append(process_upload(data, upload.filename or "upload"))
+
+    request = ChatRequest(
+        message=message or "Review the attached file(s) and tell me what they contain.",
+        conversation_id=conversation_id,
+        mode=mode,
+        auto_approve=auto_approve,
+    )
+    result = await _run_chat(request, db, attachments=attachments)
+    result["attachments"] = [a.to_public() for a in attachments]
+    return result

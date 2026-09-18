@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
     local_only: bool = False
 
+    # Multimodal input. vision_models lists substrings of model names known to
+    # accept images; anything else gets an honest "I cannot see this" note.
+    vision_models: str = "qwen3.5,qwen3-vl,qwen2.5vl,gemma3,llava,minicpm-v,llama3.2-vision,moondream"
+    whisper_model: str = "base"
+
+    # Self-improvement: distil successful runs into reusable skills. Costs one
+    # extra local model call per learnable run; set false to turn it off.
+    skill_learning_enabled: bool = True
+    max_upload_mb: int = 25
+
     # Cloud burst (OpenRouter, OpenAI-compatible)
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"

@@ -107,6 +107,39 @@ Body: `{name, prompt, schedule_seconds, enabled}`.
 
 `GET /v1/runs`, `GET /v1/runs/{id}` (full trace), `GET /v1/settings`, `PATCH /v1/settings`.
 
+## Models
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/models/status` | Ollama reachability, installed models, active model, vision support, in-flight pulls, hardware |
+| GET | `/v1/models/hardware` | RAM, CPU, disk, GPU, and the recommended tier for this machine |
+| GET | `/v1/models/catalog` | Tier ladder, each annotated with `fits` for this hardware |
+| POST | `/v1/models/provision` | `{model?, include_embeddings?}` — pulls via Ollama. `503` with `stage: "ollama_missing"` when Ollama is absent. Poll `/v1/models/status` for progress. |
+
+## Attachments and multimodal chat
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/attachments/capabilities` | What input formats this deployment can actually handle right now |
+| POST | `/v1/attachments/inspect` | `multipart` single `file` — preview how a file would be processed |
+| POST | `/v1/chat/upload` | `multipart`: `message`, `conversation_id?`, `mode?`, `auto_approve?`, repeated `files` |
+
+`/v1/chat/upload` returns the normal chat body plus `attachments[]`, each with
+`handled_as` (`text_read`, `text_extracted`, `image_for_vision_model`, `transcribed`,
+`empty_extraction`, `unsupported`) and a `note` explaining any limitation. `413` when a
+file exceeds `MAX_UPLOAD_MB`.
+
+## Skills and feedback
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/skills` | `?status=active\|candidate\|disabled` |
+| POST | `/v1/skills` | `{name, description, instructions, trigger_keywords?, status?}` — upserts by name |
+| GET | `/v1/skills/relevant` | `?q=` — preview which skills would be injected for a prompt |
+| GET/PATCH/DELETE | `/v1/skills/{id}` | PATCH takes `{status}` |
+| POST | `/v1/feedback` | `{rating: up\|down, run_id?, message_id?, comment?}` |
+| GET | `/v1/feedback/stats` | Totals and satisfaction ratio |
+
 ## Errors
 
 Standard FastAPI `{"detail": "..."}`. `400` invalid input, `401/403` auth, `404` missing,

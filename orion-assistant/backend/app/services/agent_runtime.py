@@ -132,6 +132,22 @@ def conversation_history(db: Session, conversation_id: str | None) -> list[dict[
     return [{"role": m.role, "content": m.content} for m in reversed(rows)][:-1]
 
 
+def vision_capable(model_name: str) -> bool:
+    """True when the active model can actually look at images."""
+    name = (model_name or "").lower()
+    return any(tag.strip() and tag.strip() in name for tag in settings.vision_models.split(","))
+
+
+def build_user_message(task: str, attachments: list[Any] | None) -> dict[str, Any]:
+    """Build the user turn, folding in any processed attachments."""
+    if not attachments:
+        return {"role": "user", "content": task}
+    from app.services.multimodal import build_user_content
+
+    content = build_user_content(task, attachments, vision_capable(settings.ollama_model))
+    return {"role": "user", "content": content}
+
+
 async def build_context(db: Session, task: str) -> tuple[list[dict], list[dict], str]:
     memories = await retrieve_memories(db, task)
     try:
@@ -155,15 +171,21 @@ async def run_agent(
     conversation_id: str | None = None,
     mode: str = "auto",
     auto_approve: bool = False,
+    attachments: list[Any] | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     memories, chunks, context = await build_context(db, task)
 
+    skill_block, skill_ids = skills_context(db, task)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": context},
+    ]
+    if skill_block:
+        messages.append({"role": "system", "content": skill_block})
+    messages += [
         *conversation_history(db, conversation_id),
-        {"role": "user", "content": task},
+        build_user_message(task, attachments),
     ]
 
     run = AgentRun(conversation_id=conversation_id, task=task[:4000], state="running")
@@ -228,6 +250,12 @@ async def run_agent(
         run.duration_ms = int((time.perf_counter() - started) * 1000)
         db.commit()
 
+    tool_names = [t["tool"] for t in trace if t.get("tool")]
+    await reinforce(
+        db, skill_ids, task=task, tool_names=tool_names,
+        answer=final_text or "", success=run.state == "succeeded" and not degraded,
+    )
+
     if final_text and not degraded:
         try:
             await write_memory(
@@ -253,6 +281,35 @@ async def run_agent(
     }
 
 
+def skills_context(db: Session, task: str) -> tuple[str, list[str]]:
+    """Fetch learned skills relevant to this task. Never fatal."""
+    try:
+        from app.services.skills import relevant_skills, skills_prompt_block
+
+        matches = relevant_skills(db, task)
+        if not matches:
+            return "", []
+        return skills_prompt_block(db, task), [m["id"] for m in matches]
+    except Exception:
+        log.debug("Skill retrieval failed; continuing without skills", exc_info=True)
+        return "", []
+
+
+async def reinforce(db: Session, skill_ids: list[str], *, task: str, tool_names: list[str],
+                    answer: str, success: bool) -> None:
+    """Update skill confidence and try to learn a new skill. Never fatal."""
+    try:
+        from app.services.skills import learn_from_run, record_use
+
+        if skill_ids:
+            record_use(db, skill_ids, success)
+        if not skill_ids and settings.skill_learning_enabled:
+            await learn_from_run(db, request=task, tool_names=tool_names, answer=answer, success=success)
+    except Exception:
+        db.rollback()
+        log.debug("Skill reinforcement failed", exc_info=True)
+
+
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
 
@@ -263,6 +320,7 @@ async def stream_agent(
     conversation_id: str | None = None,
     mode: str = "auto",
     auto_approve: bool = False,
+    attachments: list[Any] | None = None,
 ) -> AsyncIterator[str]:
     """Stream agent progress as server-sent events.
 
@@ -276,11 +334,16 @@ async def stream_agent(
     memories, chunks, context = await build_context(db, task)
     yield _sse("context", {"memories": memories, "knowledge": chunks})
 
+    skill_block, skill_ids = skills_context(db, task)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": context},
+    ]
+    if skill_block:
+        messages.append({"role": "system", "content": skill_block})
+    messages += [
         *conversation_history(db, conversation_id),
-        {"role": "user", "content": task},
+        build_user_message(task, attachments),
     ]
 
     run = AgentRun(conversation_id=conversation_id, task=task[:4000], state="running")
@@ -355,6 +418,12 @@ async def stream_agent(
         run.trace = trace
         run.duration_ms = int((time.perf_counter() - started) * 1000)
         db.commit()
+
+    tool_names = [t["tool"] for t in trace if t.get("tool")]
+    await reinforce(
+        db, skill_ids, task=task, tool_names=tool_names,
+        answer=final_text or "", success=run.state == "succeeded" and not degraded,
+    )
 
     if final_text and not degraded:
         try:

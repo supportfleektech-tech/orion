@@ -6,7 +6,7 @@
 ./scripts/run-tests.sh
 ```
 
-69 backend tests covering:
+159 backend tests covering:
 
 * **API integration** — health, status, tools, chat, conversations, memory, knowledge, settings,
   kill switch, automations, metrics, audit, and the full approval flow (request → approve → execute)
@@ -22,6 +22,17 @@
   enforcement, provider failure falling back to degraded, trace persistence, and history replay
 * **Streaming** — SSE event sequence and ordering (`tool_start` before `tool_result` before
   `message`), conversation persistence, run recording, and tool failures surfaced mid-stream
+* **Multimodal input** — format classification, image decode/downscale/base64, PDF, DOCX, XLSX
+  and PPTX text extraction, corrupt and binary files reported honestly rather than guessed, and
+  the guarantee that a text-only model is *told* it cannot see an attached image instead of the
+  image being silently dropped
+* **Skills and self-improvement** — keyword extraction, relevance ranking weighted by confidence,
+  prompt-block rendering, confidence rising on success and falling on failure, auto-disable after
+  repeated failures, candidate promotion, distillation JSON parsing across fenced/prefixed/garbage
+  model output, and graceful no-ops when the model is degraded or unreachable
+* **Model provisioning** — tier selection across RAM sizes against a mock Ollama server, the
+  invariant that auto-recommended tiers always support tool calling, pull progress reporting,
+  and honest failures when Ollama is missing, unreachable, out of disk, or returns an error
 * **Auth** — token required/rejected/accepted, malformed headers, protection of destructive
   endpoints, and reads staying public
 * **Configuration** — runtime setting overrides persist across restarts; secrets are not mutable

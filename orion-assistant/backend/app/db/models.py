@@ -185,3 +185,43 @@ class AuditEvent(Base):
     summary: Mapped[str] = mapped_column(Text)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Skill(Base):
+    """A procedure ORION has learned and can reuse.
+
+    Skills are how the assistant improves over time: successful approaches are
+    distilled into named, reusable instructions that get injected into the
+    system prompt when they are relevant to the current request.
+    """
+
+    __tablename__ = "skills"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text)
+    instructions: Mapped[str] = mapped_column(Text)
+    trigger_keywords: Mapped[dict] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(40), default="learned")  # learned | user | builtin
+    status: Mapped[str] = mapped_column(String(20), default="active")   # active | disabled | candidate
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+    successes: Mapped[int] = mapped_column(Integer, default=0)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class Feedback(Base):
+    """User signal on a run -- the ground truth that drives self-improvement."""
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    message_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    rating: Mapped[str] = mapped_column(String(20))  # up | down
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

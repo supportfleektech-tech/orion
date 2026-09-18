@@ -72,3 +72,27 @@ class SettingsPatch(BaseModel):
     ollama_model: str | None = None
     openrouter_model: str | None = None
     max_tool_loops: int | None = Field(default=None, ge=1, le=20)
+
+
+class SkillRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
+    trigger_keywords: list[str] | None = None
+    status: str = Field(default="active", pattern="^(active|disabled|candidate)$")
+
+
+class SkillStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|disabled|candidate)$")
+
+
+class FeedbackRequest(BaseModel):
+    rating: str = Field(pattern="^(up|down)$")
+    run_id: str | None = None
+    message_id: str | None = None
+    comment: str | None = None
+
+
+class ProvisionRequest(BaseModel):
+    model: str | None = None
+    include_embeddings: bool = True

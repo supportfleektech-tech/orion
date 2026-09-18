@@ -29,6 +29,101 @@ const patch_ = <T>(p: string, body: unknown) => request<T>(p, { method: "PATCH",
 const del = <T>(p: string) => request<T>(p, { method: "DELETE" });
 
 /* ----------------------------------------------------------------- types */
+export interface ModelTier {
+  name: string;
+  model: string;
+  min_ram_gb: number;
+  download_gb: number;
+  multimodal: boolean;
+  tools: boolean;
+  context: string;
+  note: string;
+  fits: boolean;
+}
+export interface HardwareReport {
+  platform: string;
+  cpu_count: number;
+  total_ram_gb: number;
+  available_ram_gb: number;
+  free_disk_gb: number;
+  gpu_detected: boolean;
+  recommended: ModelTier;
+  disk_sufficient: boolean;
+  disk_needed_gb: number;
+  tiers: ModelTier[];
+}
+export interface PullState {
+  model: string;
+  status: string;
+  percent: number;
+  detail: string;
+  error: string | null;
+}
+export interface ModelStatus {
+  ollama_installed: boolean;
+  ollama_running: boolean;
+  host: string;
+  active_model: string;
+  active_model_present: boolean;
+  embed_model: string;
+  embed_model_present: boolean;
+  installed_models: { name: string; size?: number }[];
+  vision_capable: boolean;
+  pulls: Record<string, PullState>;
+  hardware: HardwareReport;
+}
+export interface ProvisionResult {
+  ok: boolean;
+  model?: string;
+  stage?: string;
+  message?: string;
+  results?: Record<string, PullState | { status: string }>;
+}
+export interface SkillItem {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  trigger_keywords: string[];
+  source: string;
+  status: string;
+  confidence: number;
+  uses: number;
+  successes: number;
+  failures: number;
+  success_rate: number | null;
+  last_used_at: string | null;
+  created_at: string | null;
+  relevance?: number;
+}
+export interface FeedbackStats {
+  total: number;
+  up: number;
+  down: number;
+  satisfaction: number | null;
+}
+export interface ProcessedAttachment {
+  name: string;
+  media_type: string;
+  mime: string | null;
+  size_bytes: number;
+  handled_as: string;
+  note: string | null;
+  has_image: boolean;
+  text_preview: string | null;
+  meta: Record<string, unknown>;
+}
+export interface FormatSupport {
+  supported: boolean;
+  extensions: string[];
+  how: string;
+}
+export interface AttachmentCapabilities {
+  active_model: string;
+  max_upload_mb: number;
+  formats: Record<string, FormatSupport>;
+}
+
 export interface ChatResponse {
   conversation_id: string;
   run_id: string;
@@ -340,6 +435,49 @@ export const api = {
   runs: () => get<{ runs: RunItem[] }>("/v1/runs"),
   run: (id: string) => get<{ id: string; task: string; trace: TraceEntry[]; result: string }>(`/v1/runs/${id}`),
   audit: () => get<{ events: AuditItem[] }>("/v1/audit"),
+
+  // ---- models
+  modelStatus: () => get<ModelStatus>("/v1/models/status"),
+  modelCatalog: () => get<{ recommended: ModelTier; tiers: ModelTier[] }>("/v1/models/catalog"),
+  provisionModel: (model?: string) => post<ProvisionResult>("/v1/models/provision", { model }),
+
+  // ---- skills
+  skills: (status?: string) =>
+    get<{ skills: SkillItem[] }>(`/v1/skills${status ? `?status=${status}` : ""}`),
+  createSkill: (body: {
+    name: string;
+    description: string;
+    instructions: string;
+    trigger_keywords?: string[];
+  }) => post<SkillItem>("/v1/skills", body),
+  setSkillStatus: (id: string, status: string) => patch_<SkillItem>(`/v1/skills/${id}`, { status }),
+  deleteSkill: (id: string) => del<unknown>(`/v1/skills/${id}`),
+  relevantSkills: (q: string) =>
+    get<{ skills: SkillItem[] }>(`/v1/skills/relevant?q=${encodeURIComponent(q)}`),
+
+  // ---- feedback
+  sendFeedback: (body: { rating: "up" | "down"; run_id?: string; comment?: string }) =>
+    post<unknown>("/v1/feedback", body),
+  feedbackStats: () => get<FeedbackStats>("/v1/feedback/stats"),
+
+  // ---- attachments
+  attachmentCapabilities: () => get<AttachmentCapabilities>("/v1/attachments/capabilities"),
+  chatWithFiles: (body: {
+    message: string;
+    conversationId?: string | null;
+    mode?: string;
+    files: File[];
+  }) => {
+    const form = new FormData();
+    form.append("message", body.message);
+    if (body.conversationId) form.append("conversation_id", body.conversationId);
+    form.append("mode", body.mode ?? "auto");
+    body.files.forEach((file) => form.append("files", file));
+    return request<ChatResponse & { attachments: ProcessedAttachment[] }>("/v1/chat/upload", {
+      method: "POST",
+      body: form,
+    });
+  },
 
   settings: () => get<AppSettings>("/v1/settings"),
   updateSettings: (body: Partial<AppSettings>) => patch_<AppSettings>("/v1/settings", body),

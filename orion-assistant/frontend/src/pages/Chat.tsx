@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Archive, Bot, Loader2, MessageSquarePlus, Pencil, Pin, PinOff, Send, Trash2, UserRound, Wrench } from "lucide-react";
-import { api, chatStream, ChatMessage, ChatResponse, ConversationSummary, KnowledgeHit, MemoryItem } from "../lib/api";
+import { Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Wrench, X } from "lucide-react";
+import {
+  api,
+  chatStream,
+  AttachmentCapabilities,
+  ChatMessage,
+  ChatResponse,
+  ConversationSummary,
+  KnowledgeHit,
+  MemoryItem,
+  ProcessedAttachment,
+} from "../lib/api";
 import { Badge, Toast, timeAgo } from "../components/ui";
 import { useToast } from "../hooks/useApi";
 
@@ -16,6 +26,9 @@ export function Chat() {
   const [lastMeta, setLastMeta] = useState<ChatResponse | null>(null);
   const [stage, setStage] = useState<string>("");
   const [liveTools, setLiveTools] = useState<{ tool: string; ok?: boolean }[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [caps, setCaps] = useState<AttachmentCapabilities | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { toast, notify } = useToast();
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -56,10 +69,61 @@ export function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    api.attachmentCapabilities().then(setCaps).catch(() => setCaps(null));
+  }, []);
+
+  /** Attachments cannot be streamed as multipart, so uploads use the JSON path. */
+  async function sendWithFiles(text: string) {
+    const pending = files;
+    setFiles([]);
+    setMessages((m) => [
+      ...m,
+      { role: "user", content: text || `(${pending.length} file(s) attached)` },
+    ]);
+    setBusy(true);
+    setStage("Reading attachments…");
+    try {
+      const res = await api.chatWithFiles({
+        message: text,
+        conversationId,
+        mode,
+        files: pending,
+      });
+      setConversationId(res.conversation_id);
+      setLastMeta(res);
+      const skipped = res.attachments.filter((a: ProcessedAttachment) => a.note);
+      if (skipped.length > 0) {
+        notify(`${skipped[0].name}: ${skipped[0].note}`, "err");
+      }
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: res.result || "No response returned.",
+          provider: res.provider,
+          model: res.model,
+        },
+      ]);
+      void loadConversations();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notify(message, "err");
+      setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${message}` }]);
+    } finally {
+      setBusy(false);
+      setStage("");
+    }
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && files.length === 0) || busy) return;
     setInput("");
+    if (files.length > 0) {
+      await sendWithFiles(text);
+      return;
+    }
     setMessages((m) => [...m, { role: "user", content: text }]);
     setBusy(true);
     setLiveTools([]);
@@ -298,7 +362,52 @@ export function Chat() {
           </div>
         )}
 
+        {files.length > 0 && (
+          <div className="attachment-tray">
+            {files.map((file, index) => (
+              <span key={`${file.name}-${index}`} className="attachment-chip">
+                {file.name}
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => setFiles((f) => f.filter((_, i) => i !== index))}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={submit} className="composer">
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              const limit = (caps?.max_upload_mb ?? 25) * 1024 * 1024;
+              const tooBig = picked.filter((f) => f.size > limit);
+              if (tooBig.length > 0) {
+                notify(`${tooBig[0].name} is larger than ${caps?.max_upload_mb ?? 25} MB`, "err");
+              }
+              setFiles((f) => [...f, ...picked.filter((p) => p.size <= limit)]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="attach-btn"
+            title={
+              caps
+                ? `Images ${caps.formats.images.supported ? "" : "(no vision model)"}, PDFs, Office docs, audio, code`
+                : "Attach files"
+            }
+            onClick={() => fileRef.current?.click()}
+          >
+            <Paperclip size={17} />
+          </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -310,7 +419,7 @@ export function Chat() {
               }
             }}
           />
-          <button disabled={busy || !input.trim()}>{busy ? <Loader2 size={17} className="spin" /> : <Send size={17} />}</button>
+          <button disabled={busy || (!input.trim() && files.length === 0)}>{busy ? <Loader2 size={17} className="spin" /> : <Send size={17} />}</button>
         </form>
       </div>
       <Toast toast={toast} />

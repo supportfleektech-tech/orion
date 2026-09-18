@@ -1,5 +1,17 @@
 import { NavLink } from "react-router-dom";
-import { Activity, Bot, Brain, Database, FlaskConical, Home, Settings2, Shield, TerminalSquare } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Brain,
+  Cpu,
+  Database,
+  FlaskConical,
+  GraduationCap,
+  Home,
+  Settings2,
+  Shield,
+  TerminalSquare,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { useAsync } from "../hooks/useApi";
 
@@ -7,11 +19,13 @@ const items = [
   ["/", "Command Center", Home],
   ["/chat", "Conversations", Bot],
   ["/memory", "Memory", Brain],
+  ["/skills", "Skills", GraduationCap],
   ["/knowledge", "Knowledge", Database],
   ["/tools", "Tools", TerminalSquare],
   ["/automations", "Automations", Activity],
   ["/security", "Security", Shield],
   ["/observability", "Observability", FlaskConical],
+  ["/models", "Models", Cpu],
   ["/settings", "Settings", Settings2],
 ] as const;
 

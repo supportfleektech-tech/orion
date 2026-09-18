@@ -12,7 +12,11 @@
 | Hybrid retrieval | ✅ | Vector + keyword + confidence + pin boost |
 | Embeddings | ✅ | Ollama with deterministic hashed fallback |
 | RAG ingestion | ✅ | Upload, paste, path, directory batch |
-| Formats | ✅ | txt, md, pdf, docx, html, csv, json, code |
+| Formats (knowledge) | ✅ | txt, md, pdf, docx, html, csv, json, code |
+| Multimodal chat input | ✅ | Images to vision models; pdf/docx/pptx/xlsx extracted; audio transcribed; unreadable files reported honestly |
+| Model provisioning | ✅ | Hardware detection, tier ladder, one-command installer, in-UI download with progress |
+| Skill learning | ✅ | Successful runs distilled into reusable procedures, confidence reinforcement, auto-disable |
+| Feedback loop | ✅ | Thumbs up/down feeding skill confidence |
 | Tool registry | ✅ | 13 tools, JSON Schema, categories, risk tiers |
 | Policy gate | ✅ | Flags, tiers, per-tool enable/disable |
 | Approval queue | ✅ | UI + API, approve-and-execute |
@@ -30,9 +34,11 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 69 backend tests incl. full agent loop + streaming, ruff clean, strict TS |
+| Tests | ✅ | 159 backend tests incl. agent loop, streaming, multimodal, skills, model provisioning; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 
 MCP client federation, voice I/O, OAuth social connectors, desktop packaging, multi-agent
-orchestration and model fine-tuning. See `ROADMAP.md`.
+orchestration and model fine-tuning (ORION improves via memory, knowledge and skills instead —
+see `LOCAL_MODELS.md`). Video is accepted but not analysed frame-by-frame, and scanned documents
+are not OCR'd. See `ROADMAP.md`.

@@ -3,6 +3,8 @@
 #
 #   browse_page tool      -> playwright  (then: playwright install chromium)
 #   app/tools/mcp_server  -> mcp         (optional read-only MCP surface)
+#   audio attachments     -> faster-whisper (local speech-to-text, no cloud)
 
 playwright>=1.47,<2
 mcp>=1.10,<3
+faster-whisper>=1.1,<2
