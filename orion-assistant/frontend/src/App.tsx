@@ -1,13 +1,37 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
-import { Placeholder } from "./pages/Placeholder";
+import { Memory } from "./pages/Memory";
+import { Knowledge } from "./pages/Knowledge";
+import { Tools } from "./pages/Tools";
+import { Automations } from "./pages/Automations";
+import { Security } from "./pages/Security";
+import { Observability } from "./pages/Observability";
+import { Settings } from "./pages/Settings";
 
 export default function App() {
-  return <BrowserRouter><div className="app-shell"><Sidebar/><main className="main"><Topbar/><Routes>
-    <Route path="/" element={<Dashboard/>}/><Route path="/chat" element={<Chat/>}/>
-    {[["/tasks","Tasks"],["/memory","Memory"],["/knowledge","Knowledge"],["/tools","Tools"],["/mcp","MCP"],["/automations","Automations"],["/connectors","Connectors"],["/evaluation","Evaluation"],["/security","Security"],["/settings","Settings"]].map(([path,title])=><Route key={path} path={path} element={<Placeholder title={title as string}/>}/>)}
-  </Routes></main></div></BrowserRouter>;
+  return (
+    <BrowserRouter>
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main">
+          <Topbar />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/memory" element={<Memory />} />
+            <Route path="/knowledge" element={<Knowledge />} />
+            <Route path="/tools" element={<Tools />} />
+            <Route path="/automations" element={<Automations />} />
+            <Route path="/security" element={<Security />} />
+            <Route path="/observability" element={<Observability />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
 }

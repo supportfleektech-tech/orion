@@ -1,27 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 
-if [ ! -f .env ]; then cp .env.example .env; echo "Created .env from .env.example"; fi
+[ -f .env ] || { cp .env.example .env; echo "Created .env"; }
 
-echo "==> Starting Postgres + pgvector"
-docker compose up -d postgres
-
-echo "==> Backend Python environment"
+echo "==> Python environment"
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r backend/requirements.txt
+.venv/bin/python -m pip install --upgrade pip -q
+.venv/bin/python -m pip install -q -r backend/requirements-dev.txt
 
 echo "==> Frontend dependencies"
-cd frontend
-npm install
-cd "$ROOT"
+(cd frontend && npm install --no-audit --no-fund)
 
-echo "==> Optional local models"
-echo "Install Ollama separately, then run:"
-echo "  ollama pull qwen3:4b"
-echo "  ollama pull nomic-embed-text"
-
-echo "Bootstrap complete."
+mkdir -p knowledge
+echo "==> Done. Run ./scripts/dev.sh to start everything."

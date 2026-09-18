@@ -1,0 +1,164 @@
+import { FormEvent, useRef, useState } from "react";
+import { Database, FileText, Search, Trash2, Upload } from "lucide-react";
+import { api, KnowledgeHit } from "../lib/api";
+import { useAsync, useToast } from "../hooks/useApi";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, bytes, timeAgo } from "../components/ui";
+
+export function Knowledge() {
+  const { data, error, loading, reload } = useAsync(() => api.documents(), []);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<KnowledgeHit[] | null>(null);
+  const [text, setText] = useState({ name: "note.md", content: "" });
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast, notify } = useToast();
+
+  async function search(e: FormEvent) {
+    e.preventDefault();
+    if (!query.trim()) return setHits(null);
+    try {
+      setHits((await api.searchKnowledge(query)).results);
+    } catch (err) {
+      notify(String(err), "err");
+    }
+  }
+
+  async function addText(e: FormEvent) {
+    e.preventDefault();
+    if (!text.content.trim()) return;
+    try {
+      await api.ingestText(text.name || "note.md", text.content);
+      setText({ name: "note.md", content: "" });
+      notify("Document ingested and indexed");
+      void reload();
+    } catch (err) {
+      notify(String(err), "err");
+    }
+  }
+
+  async function upload(file: File) {
+    setUploading(true);
+    try {
+      const res = await api.uploadDocument(file);
+      notify(`Indexed ${file.name} into ${res.chunks} chunks`);
+      void reload();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err), "err");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const documents = data?.documents ?? [];
+
+  return (
+    <div className="page">
+      <PageTitle icon={Database} title="Knowledge" subtitle="RETRIEVAL AUGMENTED GENERATION" />
+
+      <div className="grid-two">
+        <Panel subtitle="INGEST" title="Add documents">
+          <div
+            className="dropzone"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const file = e.dataTransfer.files?.[0];
+              if (file) void upload(file);
+            }}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload size={22} />
+            <strong>{uploading ? "Indexing…" : "Drop a file or click to upload"}</strong>
+            <span>txt, md, pdf, docx, html, csv, json, source code</span>
+            <input
+              ref={fileRef}
+              type="file"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void upload(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <form className="form" onSubmit={addText} style={{ marginTop: 16 }}>
+            <div className="form-row">
+              <label style={{ flex: 1 }}>
+                Name
+                <input value={text.name} onChange={(e) => setText({ ...text, name: e.target.value })} />
+              </label>
+            </div>
+            <textarea
+              rows={5}
+              placeholder="Paste text to index directly…"
+              value={text.content}
+              onChange={(e) => setText({ ...text, content: e.target.value })}
+            />
+            <button className="primary" disabled={!text.content.trim()}>Index text</button>
+          </form>
+        </Panel>
+
+        <Panel subtitle="SEARCH" title="Query the index">
+          <form className="inline-form" onSubmit={search}>
+            <div className="search inline">
+              <Search size={15} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search indexed knowledge…" />
+            </div>
+            <button className="primary">Search</button>
+          </form>
+          <div className="list" style={{ marginTop: 14 }}>
+            {(hits ?? []).map((h) => (
+              <div className="list-row" key={h.id}>
+                <div>
+                  <div className="row-top">
+                    <Badge tone="info">{h.name ?? "document"}</Badge>
+                    <Badge tone="ok">score {h.score}</Badge>
+                    <span className="muted small">chunk #{h.chunk_index}</span>
+                  </div>
+                  <p>{h.content.slice(0, 420)}{h.content.length > 420 ? "…" : ""}</p>
+                </div>
+              </div>
+            ))}
+            {hits && hits.length === 0 && <p className="muted small">No matches.</p>}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel subtitle="LIBRARY" title={`${documents.length} documents`}>
+        {loading && <Loading />}
+        {error && <ErrorBlock message={error} />}
+        {!loading && documents.length === 0 && (
+          <EmptyBlock icon={FileText} title="No documents indexed" hint="Upload a file or paste text above." />
+        )}
+        <div className="list">
+          {documents.map((d) => (
+            <div className="list-row" key={d.id}>
+              <div>
+                <div className="row-top">
+                  <FileText size={14} />
+                  <strong>{d.name}</strong>
+                  <Badge tone="info">{d.chunks} chunks</Badge>
+                  <span className="muted small">{bytes(d.size_bytes)} · {timeAgo(d.created_at)}</span>
+                </div>
+                <p className="muted small">{d.path}</p>
+              </div>
+              <div className="row-actions">
+                <button
+                  className="icon danger"
+                  onClick={async () => {
+                    await api.deleteDocument(d.id);
+                    notify("Document removed");
+                    void reload();
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Toast toast={toast} />
+    </div>
+  );
+}

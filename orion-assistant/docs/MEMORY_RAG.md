@@ -1,73 +1,46 @@
-# Memory + RAG Design
+# Memory and Retrieval
 
-## Retrieval pipeline
+## Two stores
 
-```text
-query
-  ↓
-intent + filters
-  ↓
-query rewrite (optional)
-  ↓
-vector retrieval ─┐
-                  ├─ rank fusion ─→ rerank ─→ context pack
-full-text search ─┘
-  ↓
-answer with source attribution
+**Memory** (`memories`) — durable facts, preferences and interaction summaries the assistant
+accumulates. Small, curated, editable by the user.
+
+**Knowledge** (`documents` + `chunks`) — ingested source material. Large, immutable, replaceable.
+
+Both are retrieved on every turn and injected as separately labelled context blocks.
+
+## Embeddings
+
+`services/embeddings.py` tries Ollama `/api/embed` first. On failure it logs once and switches to a
+deterministic hashed bag-of-ngrams embedder (blake2b-indexed, signed, L2-normalised). This keeps
+ingestion and search fully functional offline with no model download. Results are cached by content
+hash.
+
+## Hybrid scoring
+
 ```
+score = 0.65 · cosine(query, item) + 0.35 · keyword_overlap(query, item)
+score *= 0.75 + 0.25 · confidence      # memories only
+score += 0.15 if pinned                # memories only
+```
+
+Items below `MEMORY_SIMILARITY_MIN` are dropped; if nothing clears the bar, the top three weak
+matches are returned so the model still sees something. Knowledge chunks use the same blend without
+the confidence and pin terms.
 
 ## Chunking
 
-Starter defaults:
+1200 characters with 180 characters of overlap, after whitespace normalisation. Supported formats:
+txt, md, pdf (pypdf), docx (python-docx), html (BeautifulSoup), csv, json, yaml, and common source
+extensions.
 
-- 1,200 characters per chunk;
-- 180-character overlap;
-- preserve document name/path metadata;
-- do not split structured code blocks when avoidable;
-- add page/section metadata for PDFs/docs in production.
+## Write-back
 
-## Hybrid search
+Each completed run stores `Task: … | Outcome: …` as an `interaction_summary` with confidence 0.35 —
+low enough that it informs retrieval without competing with user-asserted facts. Explicit facts
+written through `memory_write` or the UI default to 0.7–0.95.
 
-Use pgvector cosine similarity plus PostgreSQL full-text search, then Reciprocal Rank Fusion (RRF):
+## Curation
 
-`RRF(d) = Σ 1 / (k + rank_i(d))`
-
-A later stage can use a local cross-encoder reranker.
-
-## Context packing
-
-Prefer:
-
-1. high similarity;
-2. diverse sources;
-3. current versions;
-4. direct evidence;
-5. user-scoped data.
-
-Cap context to protect model latency and prevent unrelated memory flooding.
-
-## Memory types
-
-- `user_preference`
-- `project_fact`
-- `decision`
-- `relationship`
-- `task_summary`
-- `procedure`
-- `interaction_summary`
-- `knowledge_source`
-
-## Consolidation
-
-A periodic job should merge duplicate memories, update confidence and mark contradictions rather than silently choosing one.
-
-## Privacy
-
-Provide a UI action for every memory:
-
-- view;
-- edit;
-- forget;
-- source;
-- confidence;
-- scope.
+Use the Memory page to pin authoritative facts, delete wrong ones and inspect confidence. Keys give
+you idempotent upserts (`user.tz`, `deploy.topology`), preventing duplicate drift.

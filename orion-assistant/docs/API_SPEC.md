@@ -1,121 +1,95 @@
 # API Specification
 
-Base URL: `http://localhost:8000`
+Base URL: `http://localhost:8000` (or `/` through the nginx/Vite proxy).
+Interactive docs: `/docs` · OpenAPI: `/openapi.json`
 
-## Health
+When `AUTH_ENABLED=true`, mutating endpoints require `Authorization: Bearer <ADMIN_TOKEN>`.
 
-`GET /health`
+## System
 
-Returns runtime health.
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Liveness, version, uptime |
+| GET | `/v1/system/status` | Providers, counts, flags, tools, kill switch |
+| GET | `/v1/system/metrics` | Success rates, latency, router stats, timeline |
 
 ## Chat
 
 `POST /v1/chat`
 
 ```json
-{
-  "message": "Summarize the latest project decisions in my knowledge base",
-  "conversation_id": "optional-uuid",
-  "mode": "auto"
-}
+{ "message": "Summarize my project notes", "conversation_id": null, "mode": "auto" }
 ```
 
-Response:
+`mode` is `auto` | `local` | `cloud`. Response:
 
 ```json
 {
-  "conversation_id": "uuid",
-  "result": "...",
-  "provider": "local",
-  "model": "qwen3:4b",
-  "trace": [],
-  "memories": []
+  "conversation_id": "uuid", "run_id": "uuid",
+  "result": "…", "provider": "local", "model": "qwen3:4b",
+  "degraded": false, "duration_ms": 1840,
+  "trace": [], "memories": [], "knowledge": []
 }
 ```
+
+`POST /v1/chat/stream` returns SSE events: `start`, `status`, `context`, `trace`, `message`, `done`.
+
+Also: `GET /v1/conversations`, `GET /v1/conversations/{id}`, `DELETE /v1/conversations/{id}`.
 
 ## Memory
 
-`POST /v1/memory`
+| Method | Path | Body / Query |
+|---|---|---|
+| POST | `/v1/memory` | `{content, kind, key?, confidence}` — upserts when `key` is given |
+| GET | `/v1/memory` | `?kind=&limit=&offset=` |
+| GET | `/v1/memory/search` | `?q=&limit=` |
+| POST | `/v1/memory/{id}/pin` | `?pinned=true` |
+| DELETE | `/v1/memory/{id}` | |
 
-```json
-{
-  "content": "Project Orion uses PostgreSQL as its source of truth.",
-  "kind": "project_fact",
-  "key": "storage.primary",
-  "confidence": 0.95
-}
-```
+## Knowledge
 
-`GET /v1/memory/search?q=postgresql`
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/knowledge/upload` | multipart `file` |
+| POST | `/v1/knowledge/ingest` | `{path}` — file or directory inside `KNOWLEDGE_DIR` |
+| POST | `/v1/knowledge/ingest-text` | `{name, content}` |
+| GET | `/v1/knowledge/search` | `?q=&limit=` |
+| GET | `/v1/knowledge/documents` | |
+| DELETE | `/v1/knowledge/documents/{id}` | |
 
-## Knowledge ingestion
-
-`POST /v1/knowledge/ingest`
-
-```json
-{ "path": "knowledge/project-plan.md" }
-```
-
-The path is resolved on the server. Production deployment should use a configured allowlist rather than arbitrary filesystem access.
+Re-ingesting identical content is a no-op (`status: unchanged`); changed content replaces the
+previous version of that path.
 
 ## Tools
 
-`GET /v1/tools`
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/tools` | Schema, risk, category, allowed, policy reason |
+| POST | `/v1/tools/run` | `{name, arguments, auto_approve?}` |
+| POST | `/v1/tools/{name}/toggle` | `{enabled}` |
+| GET | `/v1/tools/runs` | Execution history |
 
-Returns registered tools and risk metadata.
+High-risk tools return `{"ok": false, "approval_required": true, "approval_id": "…"}`.
 
-## Planned API groups
+## Security & governance
 
-```text
-/v1/conversations
-/v1/messages
-/v1/tasks
-/v1/tasks/{id}/cancel
-/v1/tasks/{id}/approve
-/v1/tasks/{id}/events
-/v1/knowledge/documents
-/v1/knowledge/search
-/v1/memory
-/v1/tools
-/v1/tools/{id}/execute
-/v1/mcp/servers
-/v1/mcp/servers/{id}/tools
-/v1/connectors
-/v1/automations
-/v1/evaluations
-/v1/audit
-/v1/settings
-```
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/approvals` | `?status_filter=pending\|all\|approved\|rejected` |
+| POST | `/v1/approvals/{id}` | `{approve, execute}` |
+| GET/POST | `/v1/security/kill-switch` | `{enabled, reason}` |
+| GET | `/v1/audit` | Governed event log |
 
-## Streaming
+## Automations
 
-Use Server-Sent Events for the first implementation:
+`GET/POST /v1/automations`, `POST /v1/automations/{id}/run`, `DELETE /v1/automations/{id}`.
+Body: `{name, prompt, schedule_seconds, enabled}`.
 
-`GET /v1/tasks/{id}/events`
+## Observability & settings
 
-Event types:
+`GET /v1/runs`, `GET /v1/runs/{id}` (full trace), `GET /v1/settings`, `PATCH /v1/settings`.
 
-- `task.created`
-- `plan.updated`
-- `model.started`
-- `model.delta`
-- `tool.started`
-- `tool.result`
-- `approval.required`
-- `verification.failed`
-- `task.completed`
-- `task.failed`
+## Errors
 
-## Idempotency
-
-All external write operations must accept an idempotency key.
-
-## Rate limits
-
-Implement in the edge/API layer. Suggested starter buckets:
-
-- local chat: high;
-- cloud calls: limited by provider quota;
-- web search: low/moderate;
-- write tools: low;
-- admin operations: very low.
+Standard FastAPI `{"detail": "..."}`. `400` invalid input, `401/403` auth, `404` missing,
+`409` already resolved, `429` rate limited, `500` unexpected (logged, never leaks internals).

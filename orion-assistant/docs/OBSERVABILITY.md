@@ -1,48 +1,35 @@
 # Observability
 
+## What is recorded
+
+| Signal | Table | Surfaced in |
+|---|---|---|
+| Agent runs and traces | `agent_runs` | Observability page, `/v1/runs` |
+| Tool executions | `tool_runs` | Tools page, `/v1/tools/runs` |
+| Governance events | `audit_events` | Security page, `/v1/audit` |
+| Router statistics | in-memory | Command Center, `/v1/system/metrics` |
+| Message latency | `messages.latency_ms` | Conversation metadata |
+
 ## Metrics
 
-Track:
+`GET /v1/system/metrics` returns agent success rate, tool success rate, average run duration, router
+call counts by provider, failure and degraded-call counts, and a recent run timeline.
 
-- request latency p50/p95/p99;
-- model latency;
-- tokens in/out;
-- model/provider success rate;
-- tool success rate;
-- retries;
-- verification pass rate;
-- memory retrieval hit rate;
-- cloud escalation rate;
-- task completion rate;
-- user correction rate.
+## Traces
 
-## Trace shape
+`GET /v1/runs/{id}` returns the ordered trace: per-iteration provider, model, latency and requested
+tool calls, plus per-tool arguments and outcome. The Observability page renders this in a modal.
 
-```json
-{
-  "trace_id":"...",
-  "task_id":"...",
-  "events":[
-    {"type":"model.started","model":"qwen3:4b"},
-    {"type":"retrieval.completed","count":6},
-    {"type":"tool.completed","tool":"calculate","ok":true},
-    {"type":"verification.passed"}
-  ]
-}
-```
+## Logs
 
-## Privacy-safe logging
+Structured to stdout at `LOG_LEVEL`. Notable lines: model attempt failures (provider, model, error),
+the one-time embedding fallback warning, scheduler activity and unhandled request errors. Every HTTP
+response carries `X-Process-Time-Ms` and `X-Orion-Version`.
 
-Store metadata by default. Raw prompts/results should be optional and scoped. Provide a local-only logging mode.
+## Health probes
 
-## Evaluation dashboard
+* Liveness: `GET /health`
+* Readiness with dependency detail: `GET /v1/system/status` — the `degraded` boolean is true when no
+  model provider is reachable.
 
-The UI should show regression scores by capability:
-
-- chat;
-- RAG;
-- tool selection;
-- coding;
-- research;
-- planning;
-- safety/policy compliance.
+Both Docker services declare healthchecks; `web` starts only after `api` is healthy.

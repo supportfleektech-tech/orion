@@ -1,34 +1,43 @@
 import { NavLink } from "react-router-dom";
-import { Activity, Bot, Brain, Database, FlaskConical, GitBranch, Home, Plug, Settings2, Shield, TerminalSquare, Workflow } from "lucide-react";
+import { Activity, Bot, Brain, Database, FlaskConical, Home, Settings2, Shield, TerminalSquare } from "lucide-react";
+import { api } from "../lib/api";
+import { useAsync } from "../hooks/useApi";
 
 const items = [
   ["/", "Command Center", Home],
   ["/chat", "Conversations", Bot],
-  ["/tasks", "Tasks", Workflow],
   ["/memory", "Memory", Brain],
   ["/knowledge", "Knowledge", Database],
   ["/tools", "Tools", TerminalSquare],
-  ["/mcp", "MCP", GitBranch],
   ["/automations", "Automations", Activity],
-  ["/connectors", "Connectors", Plug],
-  ["/evaluation", "Evaluation", FlaskConical],
   ["/security", "Security", Shield],
+  ["/observability", "Observability", FlaskConical],
   ["/settings", "Settings", Settings2],
 ] as const;
 
 export function Sidebar() {
+  const { data } = useAsync(() => api.status(), [], 20000);
+  const online = Boolean(data && !data.degraded);
   return (
     <aside className="sidebar">
-      <div className="brand"><div className="brand-orb">O</div><div><strong>ORION</strong><span>AI OPERATING SYSTEM</span></div></div>
+      <div className="brand">
+        <div className="brand-orb">O</div>
+        <div>
+          <strong>ORION</strong>
+          <span>AI OPERATING SYSTEM</span>
+        </div>
+      </div>
       <div className="nav-group">
         {items.map(([to, label, Icon]) => (
-          <NavLink key={to} to={to} className={({isActive}) => `nav-item ${isActive ? "active" : ""}`}>
-            <Icon size={17}/><span>{label}</span>
+          <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+            <Icon size={17} />
+            <span>{label}</span>
           </NavLink>
         ))}
       </div>
       <div className="sidebar-footer">
-        <div className="status-dot"/><span>Local runtime online</span>
+        <div className="status-dot" style={{ background: data ? (online ? "#5ee2a1" : "#ffb454") : "#6b7484" }} />
+        <span>{data ? (online ? "Runtime online" : "Degraded mode") : "Connecting…"}</span>
       </div>
     </aside>
   );

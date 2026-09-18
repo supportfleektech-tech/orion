@@ -1,108 +1,75 @@
-# ORION Architecture
+# Architecture
 
-## 1. System goal
+## Overview
 
-ORION is a personal AI operating system rather than a single chat endpoint. The core distinction is a control plane around interchangeable language models:
-
-```mermaid
-flowchart TD
-  UI[React UI / PWA] --> API[FastAPI API]
-  API --> ORCH[Agent Orchestrator]
-  ORCH --> ROUTER[Model Router]
-  ROUTER --> LOCAL[Ollama local model]
-  ROUTER --> CLOUD[OpenRouter free / optional paid fallback]
-  ORCH --> MEM[Memory + RAG]
-  MEM --> PG[(Postgres + pgvector)]
-  ORCH --> TOOLS[Tool Gateway]
-  TOOLS --> BUILTIN[Built-in tools]
-  TOOLS --> MCP[MCP servers]
-  TOOLS --> BROWSER[Browser / Playwright]
-  TOOLS --> APIX[External API connectors]
-  ORCH --> VERIFY[Verifier / evaluator]
-  VERIFY --> MEM
-  API --> AUDIT[Audit & telemetry]
-  AUDIT --> PG
+```
+┌──────────────────────────────────────────────────────────────┐
+│  React + TypeScript UI (Vite)                                │
+│  Command Center · Chat · Memory · Knowledge · Tools ·        │
+│  Automations · Security · Observability · Settings           │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ REST (/v1), SSE (/v1/chat/stream)
+┌───────────────────────────▼──────────────────────────────────┐
+│  FastAPI application (app/main.py)                           │
+│  GZip · CORS · rate limiting · request timing · error guard  │
+└───────────────────────────┬──────────────────────────────────┘
+                            │
+┌───────────────────────────▼──────────────────────────────────┐
+│  Agent Runtime (services/agent_runtime.py)                   │
+│  context build → model call → tool calls → verify → memory   │
+└───┬─────────────────┬────────────────────┬───────────────────┘
+    │                 │                    │
+Model Router     Memory + RAG         Tool Gateway
+    │                 │                    │
+Ollama/OpenRouter  SQLite/Postgres    Policy · Approvals · Audit
+    │                 │                    │
+degraded extractive  embeddings      files · web · http · shell · browser
 ```
 
-## 2. Core runtime
+## Layers
 
-Every task follows a controlled lifecycle:
+**API (`app/api`)** — route definitions and Pydantic schemas. Thin: all logic lives in services.
 
-1. Receive request.
-2. Normalize intent and detect complexity/risk.
-3. Retrieve relevant memory and knowledge.
-4. Select local/cloud model path.
-5. Plan one or more actions when necessary.
-6. Call tools through a single policy-aware gateway.
-7. Observe tool outputs.
-8. Verify result against acceptance criteria.
-9. Present result + sources/artifacts + trace.
-10. Write only validated, low-risk summaries to long-term memory.
+**Core (`app/core`)** — settings (pydantic-settings, env driven), policy engine (risk tiers,
+capability flags, kill switch), security (bearer auth, in-memory rate limiter).
 
-## 3. Model routing
+**Data (`app/db`)** — SQLAlchemy 2.0 declarative models and engine. `init_db()` creates the schema
+on boot, so there is no migration step for the default deployment. SQLite gets WAL and foreign keys
+enabled; Postgres works unchanged via `DATABASE_URL`.
 
-The router is a policy engine, not merely a random model switch.
+**Services (`app/services`)**
 
-```text
-                 ┌─ local 1B/3B/4B ── routine chat, classification, rewrite
-Request ─ Router ├─ local 8B/12B ──── coding, planning on capable hardware
-                 ├─ OpenRouter/free ── heavy reasoning, multimodal, research
-                 └─ explicit provider ─ user-controlled override
-```
+| Module | Responsibility |
+|---|---|
+| `model_router` | Provider selection, ordered failover, statistics, degraded response |
+| `embeddings` | Remote embeddings with deterministic hashed fallback, caching, cosine/keyword scoring |
+| `memory` | Write/upsert, hybrid retrieval, pin, delete |
+| `ingestion` | File reading, chunking, embedding, chunk search, document lifecycle |
+| `agent_runtime` | The agent loop, tool dispatch, tracing, audit, memory write-back |
+| `fallback` | Extractive retrieval answer when no model is reachable |
 
-Routing signals:
+**Tools (`app/tools`)** — registry of `ToolDefinition`s with JSON Schema parameters, risk tier and
+category. `openai_schemas()` only exposes policy-allowed tools to the model.
 
-- task category;
-- estimated token cost;
-- context size;
-- tool requirement;
-- multimodal requirement;
-- local hardware availability;
-- privacy sensitivity;
-- current cloud quota/health;
-- evaluation score by model/task class.
+**Workers (`app/workers`)** — asyncio scheduler that runs due automations every 30 seconds inside
+the API process. No broker required.
 
-## 4. Autonomy model
+## Request flow (chat)
 
-Autonomy is represented as capabilities with risk tiers:
+1. Conversation is created or loaded; the user message is persisted.
+2. `build_context` retrieves relevant memories and knowledge chunks.
+3. Messages are assembled: system prompt, context, recent history, the new turn.
+4. The router picks providers in order and calls the first that succeeds.
+5. Tool calls are dispatched through the policy gate; high-risk calls create approval requests.
+6. The loop repeats until the model stops calling tools or `max_tool_loops` is reached.
+7. The run, its trace and an interaction summary memory are persisted; the reply is returned.
 
-| Tier | Examples | Default |
-|---|---|---|
-| L0 | answer, summarize, calculate | automatic |
-| L1 | read files, search private knowledge, inspect repo | automatic |
-| L2 | web search, create drafts, run reversible scripts | automatic with audit |
-| L3 | send message, publish, modify remote data | approval by default |
-| L4 | delete data, financial/legal/account changes, credential changes | explicit approval |
+## Design decisions
 
-A user can raise or lower specific capabilities through policy. The model never bypasses the gateway.
-
-## 5. Memory layers
-
-ORION separates memory by purpose:
-
-- Working context: current task window.
-- Episodic memory: previous task summaries, decisions and outcomes.
-- Semantic memory: durable user/project facts.
-- Procedural memory: reusable workflows and tool recipes.
-- Knowledge base: user-provided documents and indexed sources.
-- Evaluation memory: what worked, what failed, and regression cases.
-
-## 6. Failure isolation
-
-The runtime should fail soft:
-
-- cloud unavailable -> local fallback;
-- local model unavailable -> cloud if enabled;
-- search unavailable -> answer with explicit limitation;
-- a tool fails -> retry only when idempotent and bounded;
-- memory write fails -> preserve task answer;
-- verifier rejects output -> revise or report uncertainty;
-- policy denies action -> explain what approval is required.
-
-## 7. Future scale path
-
-The starter can later split into services:
-
-`api` -> `orchestrator` -> `worker pool` -> `tool gateway` -> `connectors`.
-
-Postgres remains the source of truth. Redis/NATS/Kafka are optional only when concurrency justifies them.
+* **SQLite default.** The product must run with one command and no infrastructure. Postgres is a
+  configuration change, not a rewrite.
+* **Never hard-fail.** Missing model or embedding backends degrade to documented, useful behaviour
+  instead of 500s.
+* **Deny by default.** Dangerous capabilities are off in configuration and gated again at call time.
+* **Everything observable.** Every agent run, tool run and governance decision is recorded and
+  surfaced in the UI.
