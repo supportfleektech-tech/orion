@@ -36,6 +36,8 @@
 | Motion | ✅ | Route transitions, staggered lists, shared-element nav, respects `prefers-reduced-motion` |
 | Command palette | ✅ | `Ctrl/Cmd+K` fuzzy search over pages and actions; unmatched text goes to chat |
 | Keyboard shortcuts | ✅ | `?` overlay; palette, voice and chat bindings |
+| Tasks view | ✅ | One place for approvals, schedules and run history |
+| Connectors | ✅ | Live probe of every external service, with why-it-is-down detail |
 | Live settings | ✅ | Flags, models, loop limits; persisted across restarts |
 | Web search | ✅ | SearXNG adapter (opt-in) |
 | HTTP / page fetch | ✅ | Allowlisted (opt-in) |
@@ -49,11 +51,12 @@
 | CI | ✅ | Tests, lint, frontend build, image builds |
 | Frontend tests | ✅ | Vitest + Testing Library: palette, shortcuts, UI primitives (37 tests) |
 | Real-model acceptance | ✅ | `scripts/verify-real-model.sh` exercises the live stack against an actual model |
-| Tests | ✅ | 398 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+| Tests | ✅ | 419 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 
-OAuth social connectors, desktop packaging, multi-agent
+OAuth credential storage (use an MCP server for services needing richer auth),
+desktop packaging, multi-agent
 orchestration and model fine-tuning (ORION improves via memory, knowledge and skills instead —
 see `LOCAL_MODELS.md`). Video is accepted but not analysed frame-by-frame, and scanned documents
 are not OCR'd. See `ROADMAP.md`.

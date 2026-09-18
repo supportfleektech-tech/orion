@@ -49,7 +49,7 @@ from app.db.models import (
     Message,
     ToolRun,
 )
-from app.services import evaluation, mcp_client, model_manager, voice, voice_commands
+from app.services import connectors, evaluation, mcp_client, model_manager, voice, voice_commands
 from app.services import skills as skills_service
 from app.services.agent_runtime import PERSONAS, audit, execute_tool, run_agent, stream_agent
 from app.services.ingestion import (
@@ -329,6 +329,13 @@ def update_conversation(conversation_id: str, patch: ConversationPatch, db: Sess
         "persona": conversation.persona,
         "system_prompt": conversation.system_prompt,
     }
+
+
+# --------------------------------------------------------------- connectors
+@router.get("/v1/connectors", tags=["connectors"])
+async def connector_status(db: Session = Depends(get_db)):
+    """Which external services are wired up, probed live."""
+    return await connectors.status(db)
 
 
 # -------------------------------------------------------------- evaluations

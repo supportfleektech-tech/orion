@@ -18,6 +18,8 @@ import { Models } from "./pages/Models";
 import { Skills } from "./pages/Skills";
 import { Mcp } from "./pages/Mcp";
 import { Evaluation } from "./pages/Evaluation";
+import { Tasks } from "./pages/Tasks";
+import { Connectors } from "./pages/Connectors";
 import { pageVariants } from "./lib/motion";
 
 /**
@@ -42,10 +44,12 @@ function AnimatedRoutes() {
         <Routes location={location}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/tasks" element={<Tasks />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/tools" element={<Tools />} />
           <Route path="/mcp" element={<Mcp />} />
+          <Route path="/connectors" element={<Connectors />} />
           <Route path="/automations" element={<Automations />} />
           <Route path="/security" element={<Security />} />
           <Route path="/observability" element={<Observability />} />

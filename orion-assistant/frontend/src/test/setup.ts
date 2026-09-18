@@ -30,11 +30,19 @@ globalThis.IntersectionObserver = class {
   thresholds = [];
 } as unknown as typeof IntersectionObserver;
 
-// matchMedia backs the reduced-motion checks.
+/**
+ * Report reduced motion in tests.
+ *
+ * Framer Motion animates in real time even under jsdom, so exit transitions
+ * kept assertions waiting and produced tests that failed roughly one run in
+ * four -- always on a timeout, never on the logic. Honouring the same
+ * preference a user can set makes transitions instant and the suite
+ * deterministic, without stubbing the library itself.
+ */
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({
-    matches: false,
+    matches: query.includes("prefers-reduced-motion"),
     media: query,
     onchange: null,
     addEventListener: vi.fn(),

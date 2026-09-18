@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Bot,
   Brain,
+  Cable,
   ClipboardCheck,
   Command,
   Cpu,
@@ -13,6 +14,7 @@ import {
   FlaskConical,
   GraduationCap,
   Home,
+  ListTodo,
   MessageSquarePlus,
   Plug,
   Power,
@@ -99,11 +101,13 @@ export function CommandPalette() {
     return [
       go("/", "Command Center", Home, "dashboard home overview"),
       go("/chat", "Conversations", Bot, "chat talk ask message"),
+      go("/tasks", "Tasks", ListTodo, "queue approvals pending scheduled failed work"),
       go("/memory", "Memory", Brain, "remember facts"),
       go("/skills", "Skills", GraduationCap, "learned procedures"),
       go("/knowledge", "Knowledge", Database, "documents rag files"),
       go("/tools", "Tools", TerminalSquare, "registry capabilities"),
       go("/mcp", "MCP servers", Plug, "external tools protocol"),
+      go("/connectors", "Connectors", Cable, "integrations services ollama openrouter search status"),
       go("/automations", "Automations", Activity, "schedule cron jobs"),
       go("/security", "Security", Shield, "approvals audit policy"),
       go("/observability", "Observability", FlaskConical, "runs traces metrics logs"),
@@ -165,8 +169,12 @@ export function CommandPalette() {
   }, []);
 
   useEffect(() => {
-    // Wait a frame so the input exists before focusing it.
-    if (open) requestAnimationFrame(() => inputRef.current?.focus());
+    if (!open) return;
+    // Focus as soon as the input is mounted. This ran inside
+    // requestAnimationFrame, which left a window where the palette was
+    // visible but nothing had focus -- an arrow key pressed in that gap went
+    // nowhere. The effect already runs after the commit, so the ref is set.
+    inputRef.current?.focus();
   }, [open]);
 
   // Keep the highlighted row in view when navigating by keyboard.
@@ -229,6 +237,7 @@ export function CommandPalette() {
               <Search size={17} />
               <input
                 ref={inputRef}
+                autoFocus
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);

@@ -108,20 +108,37 @@ describe("command palette", () => {
 
   it("moves the highlight with the arrow keys and runs it on Enter", async () => {
     const user = userEvent.setup();
-    setup();
-    await open(user);
-    // First entry is Command Center; one step down is Conversations.
-    await user.keyboard("{ArrowDown}{Enter}");
+    const dialog = await (async () => {
+      setup();
+      return open(user);
+    })();
+
+    // Send the keys as separate events and wait for the highlight to settle
+    // between them; batching them races React's state update.
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() =>
+      expect(dialog.querySelector(".palette-row.active")?.textContent).toContain("Conversations"),
+    );
+
+    await user.keyboard("{Enter}");
     await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent("/chat"));
   });
 
   it("wraps around when arrowing up from the first result", async () => {
     const user = userEvent.setup();
     setup();
-    await open(user);
-    // Up from the top should land on the last action, the kill switch.
-    await user.keyboard("{ArrowUp}{Enter}");
-    await waitFor(() => expect(api.killSwitch).toHaveBeenCalledWith(true, "command palette"));
+    const dialog = await open(user);
+
+    // Assert against whatever is actually last, so adding a command to the
+    // palette does not break this test for the wrong reason.
+    const rows = () => Array.from(dialog.querySelectorAll(".palette-row"));
+    const lastLabel = rows().at(-1)!.textContent;
+
+    await user.keyboard("{ArrowUp}");
+    await waitFor(() => {
+      const active = dialog.querySelector(".palette-row.active");
+      expect(active?.textContent).toBe(lastLabel);
+    });
   });
 
   it("runs the kill switch action and then shows security", async () => {

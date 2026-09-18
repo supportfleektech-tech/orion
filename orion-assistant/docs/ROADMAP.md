@@ -15,7 +15,9 @@ automations, observability, settings, Docker deployment and CI.
 ## v1.2 — reach
 
 * ✅ MCP client so ORION can consume external MCP servers (see `MCP.md`)
-* OAuth connector framework with encrypted secret storage
+* OAuth connector framework with encrypted secret storage — *still deferred.*
+  The Connectors page covers the services ORION actually talks to; anything
+  needing real OAuth belongs behind an MCP server you run.
 * Cron-expression scheduling in addition to intervals
 * ✅ Evaluation harness with regression fixtures and scoring (see `EVALUATION.md`)
 

@@ -212,7 +212,7 @@ POST   /v1/voice/transcribe
 ```
 
 * 37 frontend tests (Vitest + Testing Library) covering the command palette,
-  shortcut overlay and UI primitives, plus 398 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+  shortcut overlay and UI primitives, plus 419 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess
@@ -237,7 +237,7 @@ POST   /v1/voice/transcribe
 ```
 orion-assistant/
 ├── backend/          FastAPI service (app/{api,core,db,services,tools,workers,prompts}), migrations, tests
-├── frontend/         React + TypeScript UI (13 fully wired pages)
+├── frontend/         React + TypeScript UI (15 fully wired pages)
 ├── evals/            regression suites (YAML) for the evaluation harness
 ├── scripts/          bootstrap, dev, tests, healthcheck, ingest, migrate
 ├── docs/             architecture, API, security, operations, voice, MCP, evaluation, roadmap

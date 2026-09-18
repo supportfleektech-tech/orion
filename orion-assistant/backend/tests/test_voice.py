@@ -512,3 +512,31 @@ def test_natural_filler_between_verb_and_target(phrase):
 @pytest.mark.parametrize("phrase", ["show me the door", "open a bank account", "take me home tonight"])
 def test_filler_does_not_cause_false_navigation(phrase):
     assert vc.parse(phrase).action == "chat"
+
+
+def test_no_two_pages_claim_the_same_voice_alias():
+    """A duplicate alias silently shadows whichever page is declared later.
+
+    'tasks' belonged to both /tasks and /automations, so 'open tasks' always
+    went to Automations and the Tasks page was unreachable by voice.
+    """
+    from collections import Counter
+
+    counts = Counter(alias for aliases in vc.ROUTES.values() for alias in aliases)
+    duplicates = {alias: count for alias, count in counts.items() if count > 1}
+    assert not duplicates, f"aliases claimed by more than one page: {duplicates}"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "target"),
+    [
+        ("open tasks", "/tasks"),
+        ("show me the queue", "/tasks"),
+        ("open automations", "/automations"),
+        ("go to scheduled tasks", "/automations"),
+    ],
+)
+def test_tasks_and_automations_stay_distinct(phrase, target):
+    command = vc.parse(phrase)
+    assert command.action == "navigate"
+    assert command.target == target

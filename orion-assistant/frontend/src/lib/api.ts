@@ -458,6 +458,26 @@ export async function chatStream(
   return conversation;
 }
 
+export interface ConnectorInfo {
+  id: string;
+  name: string;
+  category: string;
+  summary: string;
+  status: "connected" | "unreachable" | "not_configured" | "disabled";
+  detail: string;
+  endpoint: string | null;
+  required: boolean;
+  docs: string | null;
+  env_keys: string[] | null;
+}
+
+export interface ConnectorStatus {
+  connectors: ConnectorInfo[];
+  connected: number;
+  total: number;
+  local_only: boolean;
+}
+
 export interface EvalSuiteSummary {
   name: string;
   description: string;
@@ -692,6 +712,8 @@ export const api = {
     }
     return response.blob();
   },
+
+  connectors: () => get<ConnectorStatus>("/v1/connectors"),
 
   evaluations: () => get<EvalStatus>("/v1/evaluations"),
   evaluationHistory: () => get<{ runs: EvalHistoryEntry[] }>("/v1/evaluations/history"),

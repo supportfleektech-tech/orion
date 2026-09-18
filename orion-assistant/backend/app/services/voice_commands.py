@@ -24,15 +24,17 @@ from typing import Any
 ROUTES: dict[str, list[str]] = {
     "/": ["dashboard", "home", "command center", "command centre", "overview", "main"],
     "/chat": ["chat", "conversations", "conversation", "messages"],
+    "/tasks": ["tasks", "task", "queue", "work", "to do", "todo"],
     "/memory": ["memory", "memories"],
     "/skills": ["skills", "skill"],
     "/knowledge": ["knowledge", "documents", "docs", "library"],
     "/tools": ["tools", "tool"],
-    "/automations": ["automations", "automation", "schedules", "tasks"],
+    "/automations": ["automations", "automation", "schedules", "scheduled tasks"],
     "/security": ["security", "approvals", "permissions"],
     "/observability": ["observability", "runs", "traces", "logs", "metrics"],
     "/mcp": ["mcp", "mcp servers", "m c p", "external tools", "tool servers"],
     "/evaluation": ["evaluation", "evaluations", "evals", "eval", "benchmarks", "regression"],
+    "/connectors": ["connectors", "connector", "integrations", "services"],
     "/models": ["models", "model"],
     "/settings": ["settings", "preferences", "configuration", "config"],
 }
