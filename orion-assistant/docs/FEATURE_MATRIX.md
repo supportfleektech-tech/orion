@@ -43,7 +43,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 359 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+| Tests | ✅ | 373 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

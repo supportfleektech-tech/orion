@@ -203,7 +203,7 @@ POST   /v1/voice/transcribe
 ./scripts/run-tests.sh
 ```
 
-* 359 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 373 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess
