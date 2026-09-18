@@ -31,6 +31,8 @@ ROUTES: dict[str, list[str]] = {
     "/automations": ["automations", "automation", "schedules", "tasks"],
     "/security": ["security", "approvals", "permissions"],
     "/observability": ["observability", "runs", "traces", "logs", "metrics"],
+    "/mcp": ["mcp", "mcp servers", "m c p", "external tools", "tool servers"],
+    "/evaluation": ["evaluation", "evaluations", "evals", "eval", "benchmarks", "regression"],
     "/models": ["models", "model"],
     "/settings": ["settings", "preferences", "configuration", "config"],
 }
@@ -105,8 +107,11 @@ def strip_wake_word(text: str, wake_word: str) -> tuple[str, bool]:
 
 # ------------------------------------------------------------------ matchers
 def match_navigation(text: str) -> VoiceCommand | None:
-    verb = r"(?:open|go to|show|navigate to|take me to|switch to|display|view)"
-    match = re.match(rf"^{verb}\s+(?:the\s+)?(.+)$", text)
+    verb = r"(?:open|go to|show|navigate to|take me to|switch to|display|view|bring up)"
+    # "show me the evals", "take me to my settings" -- the filler between the
+    # verb and the target varies, so allow the common pronouns and articles.
+    filler = r"(?:me\s+|us\s+)?(?:the\s+|my\s+|a\s+)?"
+    match = re.match(rf"^{verb}\s+{filler}(.+)$", text)
     phrase = match.group(1).strip() if match else text
 
     # Trailing words like "page"/"tab"/"screen" are noise.
@@ -259,6 +264,7 @@ def command_catalog() -> list[dict[str, Any]]:
     return [
         {"category": "Navigation", "examples": [
             "open tools", "go to settings", "show memory", "take me to the dashboard",
+            "open evaluation", "show mcp servers",
         ]},
         {"category": "Capabilities", "examples": [
             "activate web search", "disable the shell tool", "turn on local only mode",

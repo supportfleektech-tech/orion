@@ -17,7 +17,7 @@ automations, observability, settings, Docker deployment and CI.
 * ✅ MCP client so ORION can consume external MCP servers (see `MCP.md`)
 * OAuth connector framework with encrypted secret storage
 * Cron-expression scheduling in addition to intervals
-* Evaluation harness with regression fixtures and scoring
+* ✅ Evaluation harness with regression fixtures and scoring (see `EVALUATION.md`)
 
 ## v1.3 — surfaces
 

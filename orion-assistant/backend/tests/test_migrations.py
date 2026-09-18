@@ -203,3 +203,23 @@ def test_init_db_survives_a_broken_migration(tmp_path, monkeypatch):
     assert any("migration failed" in message.lower() for message in logged)
     # The database is still usable even though the upgrade failed.
     assert MODEL_TABLES <= set(inspect(engine).get_table_names())
+
+
+def test_the_docker_image_ships_what_the_app_needs_at_runtime():
+    """Migrations and evaluation suites must be in the image.
+
+    init_db() upgrades the schema on boot, which needs migrations/ and
+    alembic.ini; the evaluation harness needs evals/. All three live outside
+    app/, so a Dockerfile that only copies app/ produces an image that breaks
+    on first boot. This caught exactly that.
+    """
+    root = BACKEND.parent
+    dockerfile = (BACKEND / "Dockerfile").read_text()
+
+    for required in ("backend/migrations", "backend/alembic.ini", "evals"):
+        assert f"COPY {required}" in dockerfile, f"the image does not copy {required}"
+
+    # The build context must be the project root for those paths to resolve.
+    compose = (root / "docker-compose.yml").read_text()
+    assert "dockerfile: backend/Dockerfile" in compose
+    assert "context: ." in compose

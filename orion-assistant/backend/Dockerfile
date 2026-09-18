@@ -11,12 +11,18 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY app ./app
+COPY backend/app ./app
+# Migrations must ship: the app upgrades its own schema on boot.
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/migrations ./migrations
+# Evaluation suites are data, and live a level up from the backend package.
+COPY evals ../evals
 
-RUN useradd -m -u 10001 orion && mkdir -p /data /knowledge && chown -R orion:orion /app /data /knowledge
+RUN useradd -m -u 10001 orion && mkdir -p /data /knowledge \
+ && chown -R orion:orion /app /evals /data /knowledge
 USER orion
 
 ENV DATABASE_URL=sqlite:////data/orion.db \

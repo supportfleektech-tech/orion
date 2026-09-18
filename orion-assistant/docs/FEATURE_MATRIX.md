@@ -31,6 +31,7 @@
 | Audit log | ✅ | All governed events |
 | Automations | ✅ | Scheduler, manual run, history |
 | Observability | ✅ | Runs, traces, tool history, metrics |
+| Evaluation harness | ✅ | YAML suites graded deterministically against the live agent, with run history |
 | Live settings | ✅ | Flags, models, loop limits; persisted across restarts |
 | Web search | ✅ | SearXNG adapter (opt-in) |
 | HTTP / page fetch | ✅ | Allowlisted (opt-in) |
@@ -42,7 +43,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 324 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+| Tests | ✅ | 359 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

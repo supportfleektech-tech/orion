@@ -1,61 +1,105 @@
 # Evaluation
 
-## Automated tests
+A local assistant drifts. You swap the model, tune the reranker, edit the
+system prompt — and the only honest way to know whether it got better or worse
+is to re-run a fixed set of cases and compare.
 
-```bash
-./scripts/run-tests.sh
+Open **Evaluation** in the sidebar, pick a suite, press **Run**. Each case goes
+through the real agent loop — real tools, real retrieval, real model — and is
+graded against what the suite says a good answer looks like.
+
+---
+
+## Writing a suite
+
+Suites are plain YAML (or JSON) in `evals/`. No code:
+
+```yaml
+name: core
+description: Baseline behaviour that must not regress.
+
+cases:
+  - id: arithmetic-uses-calculator
+    task: what is 47 * 19?
+    expect:
+      contains: "893"
+      tools_used: calculate
 ```
 
-159 backend tests covering:
+### Assertions
 
-* **API integration** — health, status, tools, chat, conversations, memory, knowledge, settings,
-  kill switch, automations, metrics, audit, and the full approval flow (request → approve → execute)
-* **Retrieval** — hashed embedding determinism and discrimination, hybrid search relevance,
-  memory upsert-by-key semantics
-* **Ingestion** — chunking with overlap, empty input, format support, unsupported-type rejection
-* **Tools and policy** — arithmetic allowlist, injection rejection, exponent bounds, registry
-  schema generation, risk-tier approval requirement, kill-switch enforcement, and the guarantee that
-  optional dependencies (playwright, mcp) are never imported at boot
-* **Agent loop** — the real tool-calling cycle against a mock OpenAI-compatible server:
-  plain answers, single and multi-step tool chains, parallel tool calls in one turn, bounded
-  iteration, failing and unknown tools, malformed arguments, approval gating mid-loop, kill-switch
-  enforcement, provider failure falling back to degraded, trace persistence, and history replay
-* **Streaming** — SSE event sequence and ordering (`tool_start` before `tool_result` before
-  `message`), conversation persistence, run recording, and tool failures surfaced mid-stream
-* **Multimodal input** — format classification, image decode/downscale/base64, PDF, DOCX, XLSX
-  and PPTX text extraction, corrupt and binary files reported honestly rather than guessed, and
-  the guarantee that a text-only model is *told* it cannot see an attached image instead of the
-  image being silently dropped
-* **Skills and self-improvement** — keyword extraction, relevance ranking weighted by confidence,
-  prompt-block rendering, confidence rising on success and falling on failure, auto-disable after
-  repeated failures, candidate promotion, distillation JSON parsing across fenced/prefixed/garbage
-  model output, and graceful no-ops when the model is degraded or unreachable
-* **Model provisioning** — tier selection across RAM sizes against a mock Ollama server, the
-  invariant that auto-recommended tiers always support tool calling, pull progress reporting,
-  and honest failures when Ollama is missing, unreachable, out of disk, or returns an error
-* **Auth** — token required/rejected/accepted, malformed headers, protection of destructive
-  endpoints, and reads staying public
-* **Configuration** — runtime setting overrides persist across restarts; secrets are not mutable
-* **Prompt** — the system prompt loads from `app/prompts/system.md` and covers injection and secrets
+| Key | Passes when |
+|---|---|
+| `contains` | The substring appears in the answer (case-insensitive) |
+| `not_contains` | It does not appear |
+| `regex` | The pattern matches (case-insensitive, `.` spans newlines) |
+| `tools_used` | That tool was called during the run |
+| `tools_not_used` | It was not called |
+| `max_duration_ms` | The run finished within the budget |
 
-Frontend quality is enforced by a strict TypeScript build (`noUnusedLocals`,
-`noUnusedParameters`) and lint by `ruff` on the backend. CI runs all of it plus both Docker builds.
+Every key also accepts a list, which becomes one check per entry:
 
-## Manual acceptance checklist
+```yaml
+    expect:
+      contains:
+        - "893"
+        - "47"
+      tools_not_used: [shell, browse_page]
+```
 
-1. Command Center shows provider state and live counters.
-2. Chat persists across reloads; conversation list loads history.
-3. With no model running, chat returns a labelled retrieval-only answer rather than an error.
-4. Uploading a document indexes it and it becomes searchable.
-5. A memory stored in the UI is retrieved in a later conversation.
-6. Running `write_file` from the Tools page creates an approval; approving executes it.
-7. The kill switch blocks all tools and the Topbar shows the alert state.
-8. An automation runs on demand and records its result.
-9. Observability shows the run with a complete trace.
-10. Toggling a flag in Settings changes tool availability immediately.
+A case passes only if **every** check passes. A case with no assertions is
+treated as a mistake by the test suite, not a free pass.
 
-## Regression philosophy
+> **YAML gotcha:** bare `yes`, `no`, `on`, `off` and `true` become booleans, and
+> bare digits become numbers. They are compared as text anyway, but quote them
+> (`contains: "yes"`) to say what you mean.
 
-Because model output is non-deterministic, tests assert on *contracts* — status codes, persistence,
-policy decisions, retrieval ranking — not on generated prose. The degraded path is deliberately
-tested, since it is the only fully deterministic generation mode.
+---
+
+## Why no LLM judge
+
+A model grading another model is nondeterministic, needs a second model
+available, and cannot run offline on a laptop — it reintroduces exactly the
+uncertainty an evaluation exists to remove. The checks here are cheap, exact,
+and repeatable.
+
+The trade-off is real: this measures behaviour you can state precisely, not
+answer quality in general. That is the right scope for a **regression** suite.
+Use the cases to pin down things that should never break — the calculator gets
+used, the shell does not get called, nothing claims to have sent an email.
+
+---
+
+## Reading results
+
+Expand any case to see each assertion, what was expected, why it failed, which
+tools ran, and the full answer.
+
+Absolute pass rates are not very meaningful on their own: a 4B local model will
+fail cases that a frontier model passes. **The comparison between runs is the
+signal.** Every run is recorded in the history table with the model it used, so
+"was this change an improvement?" is answerable.
+
+The two shipped suites are deliberately different in character:
+
+* **`core`** — capability. Expect these to move as you change models.
+* **`safety`** — guardrails. These should pass regardless of model quality; a
+  failure here is a policy bug, not a capability gap.
+
+---
+
+## Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/evaluations` | Available suites and the active model |
+| `GET` | `/v1/evaluations/history` | Past runs, newest first |
+| `POST` | `/v1/evaluations/{name}/run` | Run a suite and return full results |
+
+Runs execute cases **sequentially** — a local model serves one request at a
+time, so concurrency would make the latency numbers meaningless. Expect a suite
+to take a few minutes against a local model.
+
+Evaluations run with approvals auto-granted; otherwise a suite touching a
+gated tool would block forever waiting for a human. They still respect the kill
+switch and every other policy flag.

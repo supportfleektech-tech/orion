@@ -443,3 +443,51 @@ def test_transcribe_endpoint_can_interpret_commands(client, monkeypatch):
     assert body["text"] == "open tools"
     assert body["command"]["action"] == "navigate"
     assert body["command"]["target"] == "/tools"
+
+
+# ------------------------------------------- every UI page is reachable by voice
+def test_every_sidebar_route_can_be_reached_by_voice():
+    """A page you cannot navigate to by voice is invisible to voice control."""
+    import re
+    from pathlib import Path
+
+    sidebar = Path(__file__).resolve().parent.parent.parent / "frontend/src/components/Sidebar.tsx"
+    routes = set(re.findall(r'\["(/[a-z]*)",', sidebar.read_text()))
+
+    missing = routes - set(vc.ROUTES)
+    assert not missing, f"these pages have no voice route: {sorted(missing)}"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "target"),
+    [
+        ("open evaluation", "/evaluation"),
+        ("show me the evals", "/evaluation"),
+        ("go to mcp servers", "/mcp"),
+        ("open external tools", "/mcp"),
+    ],
+)
+def test_the_newer_pages_are_navigable(phrase, target):
+    command = vc.parse(phrase)
+    assert command.action == "navigate"
+    assert command.target == target
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "show me the evals",
+        "take me to my settings",
+        "bring up the dashboard",
+        "show me memory",
+        "go to the tools page",
+    ],
+)
+def test_natural_filler_between_verb_and_target(phrase):
+    """People say "show me the X", not just "show X"."""
+    assert vc.parse(phrase).action == "navigate"
+
+
+@pytest.mark.parametrize("phrase", ["show me the door", "open a bank account", "take me home tonight"])
+def test_filler_does_not_cause_false_navigation(phrase):
+    assert vc.parse(phrase).action == "chat"

@@ -3,6 +3,7 @@ import {
   Activity,
   Bot,
   Brain,
+  ClipboardCheck,
   Cpu,
   Database,
   FlaskConical,
@@ -27,6 +28,7 @@ const items = [
   ["/automations", "Automations", Activity],
   ["/security", "Security", Shield],
   ["/observability", "Observability", FlaskConical],
+  ["/evaluation", "Evaluation", ClipboardCheck],
   ["/models", "Models", Cpu],
   ["/settings", "Settings", Settings2],
 ] as const;

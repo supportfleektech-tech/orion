@@ -42,5 +42,5 @@ jobs:
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t orion-api ./orion-assistant/backend
+      - run: docker build -t orion-api -f ./orion-assistant/backend/Dockerfile ./orion-assistant
       - run: docker build -t orion-web ./orion-assistant/frontend

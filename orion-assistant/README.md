@@ -115,6 +115,13 @@ Protocol server and its tools join the registry as `server.tool`, policy-gated
 at the risk level you assign — a remote server cannot grant itself privilege.
 See [docs/MCP.md](docs/MCP.md).
 
+### It tells you when it gets worse
+
+`evals/*.yaml` holds regression cases — a task and what a good answer looks
+like. The **Evaluation** page runs them through the real agent loop and grades
+them deterministically (no LLM judge), keeping a history so you can tell whether
+swapping a model actually helped. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
 ### It learns from what works
 
 Successful multi-step runs are distilled into named, reusable **skills** that are injected into
@@ -141,8 +148,8 @@ React + TypeScript UI  ──►  FastAPI  ──►  Agent Runtime
   `postgresql+psycopg://…` for Postgres + pgvector at scale. Schema is created automatically on boot.
 * **Embeddings** — `nomic-embed-text` via Ollama when available, otherwise a deterministic hashed
   bag-of-ngrams embedder so retrieval never breaks.
-* **Optional extras** — `playwright` (browser tool) and `mcp` (read-only MCP surface) are *not*
-  required. Their imports are guarded, and CI asserts the app boots without them. Install from
+* **Optional extras** — `playwright` (browser tool), `mcp` (MCP server and client),
+  `faster-whisper` (speech in) and `supertonic` (speech out) are *not* required. Their imports are guarded, and CI asserts the app boots without them. Install from
   `backend/requirements-optional.txt` only if you need those capabilities.
 * **Safety** — every tool declares a risk tier. `high` and `destructive` tools create an approval
   request instead of executing. Category flags (`shell`, `browser`, `network`, web search) are off by
@@ -176,12 +183,16 @@ GET    /v1/runs · /v1/runs/{id}         POST   /v1/automations/{id}/run
 GET    /v1/audit                        DELETE /v1/automations/{id}
 GET    /v1/settings · PATCH /v1/settings
 
-GET    /v1/personas                     GET    /v1/mcp/servers
-GET    /v1/voice/status                 POST   /v1/mcp/servers
-GET    /v1/voice/commands               PATCH  /v1/mcp/servers/{id}
-POST   /v1/voice/interpret              DELETE /v1/mcp/servers/{id}
-POST   /v1/voice/speak                  POST   /v1/mcp/servers/{id}/refresh
-POST   /v1/voice/transcribe             POST   /v1/mcp/refresh
+GET    /v1/evaluations                  GET    /v1/mcp/servers
+GET    /v1/evaluations/history          POST   /v1/mcp/servers
+POST   /v1/evaluations/{name}/run       PATCH  /v1/mcp/servers/{id}
+                                        DELETE /v1/mcp/servers/{id}
+GET    /v1/personas                     POST   /v1/mcp/servers/{id}/refresh
+GET    /v1/voice/status                 POST   /v1/mcp/refresh
+GET    /v1/voice/commands
+POST   /v1/voice/interpret              GET    /v1/models · /v1/skills
+POST   /v1/voice/speak                  GET    /v1/attachments/capabilities
+POST   /v1/voice/transcribe
 ```
 
 ---
@@ -192,7 +203,7 @@ POST   /v1/voice/transcribe             POST   /v1/mcp/refresh
 ./scripts/run-tests.sh
 ```
 
-* 324 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 359 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess
@@ -216,10 +227,11 @@ POST   /v1/voice/transcribe             POST   /v1/mcp/refresh
 
 ```
 orion-assistant/
-├── backend/          FastAPI service (app/{api,core,db,services,tools,workers,prompts}) + tests
-├── frontend/         React + TypeScript UI (9 fully wired pages)
-├── scripts/          bootstrap, dev, tests, healthcheck, ingest
-├── docs/             architecture, API, security, operations, roadmap
+├── backend/          FastAPI service (app/{api,core,db,services,tools,workers,prompts}), migrations, tests
+├── frontend/         React + TypeScript UI (13 fully wired pages)
+├── evals/            regression suites (YAML) for the evaluation harness
+├── scripts/          bootstrap, dev, tests, healthcheck, ingest, migrate
+├── docs/             architecture, API, security, operations, voice, MCP, evaluation, roadmap
 ├── docker-compose.yml
 └── .env.example
 ```

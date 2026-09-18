@@ -49,7 +49,7 @@ from app.db.models import (
     Message,
     ToolRun,
 )
-from app.services import mcp_client, model_manager, voice, voice_commands
+from app.services import evaluation, mcp_client, model_manager, voice, voice_commands
 from app.services import skills as skills_service
 from app.services.agent_runtime import PERSONAS, audit, execute_tool, run_agent, stream_agent
 from app.services.ingestion import (
@@ -331,6 +331,32 @@ def update_conversation(conversation_id: str, patch: ConversationPatch, db: Sess
     }
 
 
+# -------------------------------------------------------------- evaluations
+
+
+@router.get("/v1/evaluations", tags=["evaluation"])
+def evaluation_status():
+    """Available evaluation suites and where they live."""
+    return evaluation.status()
+
+
+@router.get("/v1/evaluations/history", tags=["evaluation"])
+def evaluation_history(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    """Past runs, so you can see whether a change helped or hurt."""
+    return {"runs": evaluation.history(db, limit)}
+
+
+@router.post("/v1/evaluations/{name}/run", tags=["evaluation"], dependencies=[Depends(require_auth)])
+async def run_evaluation(name: str, db: Session = Depends(get_db)):
+    """Run a suite against the live agent. Can take a while on a local model."""
+    try:
+        return await evaluation.run_suite(db, name)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 # --------------------------------------------------------------------- MCP
 
 
@@ -383,7 +409,8 @@ async def create_mcp_server(req: McpServerRequest, db: Session = Depends(get_db)
     db.commit()
     db.refresh(server)
 
-    audit(db, "mcp.server.created", "mcp", server.name, {"transport": server.transport})
+    audit(db, "mcp.server.created", f"Registered MCP server '{server.name}'",
+          {"name": server.name, "transport": server.transport, "risk": server.risk})
     await mcp_client.refresh_server(db, server)
     return _mcp_dict(server)
 
@@ -402,7 +429,8 @@ async def update_mcp_server(server_id: str, req: McpServerPatch, db: Session = D
 
     # Tools are namespaced by server name, so drop the old set before re-adding.
     mcp_client.unregister_server_tools(previous_name)
-    audit(db, "mcp.server.updated", "mcp", server.name, req.model_dump(exclude_unset=True))
+    audit(db, "mcp.server.updated", f"Updated MCP server '{server.name}'",
+          {"name": server.name, **req.model_dump(exclude_unset=True)})
     await mcp_client.refresh_server(db, server)
     return _mcp_dict(server)
 
@@ -413,7 +441,8 @@ def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
     if not server:
         raise HTTPException(404, "MCP server not found")
     removed = mcp_client.unregister_server_tools(server.name)
-    audit(db, "mcp.server.deleted", "mcp", server.name, {"tools_removed": removed})
+    audit(db, "mcp.server.deleted", f"Removed MCP server '{server.name}'",
+          {"name": server.name, "tools_removed": removed})
     db.delete(server)
     db.commit()
     return {"deleted": True, "tools_removed": removed}

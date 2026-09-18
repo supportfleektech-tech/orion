@@ -431,6 +431,69 @@ export async function chatStream(
   return conversation;
 }
 
+export interface EvalSuiteSummary {
+  name: string;
+  description: string;
+  path: string;
+  case_count: number;
+  error: string | null;
+}
+
+export interface EvalStatus {
+  directory: string;
+  exists: boolean;
+  suites: EvalSuiteSummary[];
+  model: string;
+}
+
+export interface EvalCheck {
+  kind: string;
+  expected: unknown;
+  passed: boolean;
+  detail: string;
+}
+
+export interface EvalCase {
+  id: string;
+  task: string;
+  passed: boolean;
+  answer: string;
+  checks: EvalCheck[];
+  tools_used: string[];
+  duration_ms: number;
+  provider: string;
+  model: string;
+  degraded: boolean;
+  error: string | null;
+}
+
+export interface EvalRun {
+  suite: string;
+  description: string;
+  total: number;
+  passed: number;
+  failed: number;
+  pass_rate: number;
+  duration_ms: number;
+  degraded: boolean;
+  model: string;
+  ran_at: string;
+  cases: EvalCase[];
+}
+
+export interface EvalHistoryEntry {
+  suite: string;
+  ran_at: string;
+  total: number;
+  passed: number;
+  failed: number;
+  pass_rate: number;
+  duration_ms: number;
+  model: string;
+  degraded: boolean;
+  failures: string[];
+}
+
 export interface McpTool {
   name: string;
   description: string;
@@ -599,6 +662,10 @@ export const api = {
     }
     return response.blob();
   },
+
+  evaluations: () => get<EvalStatus>("/v1/evaluations"),
+  evaluationHistory: () => get<{ runs: EvalHistoryEntry[] }>("/v1/evaluations/history"),
+  runEvaluation: (name: string) => post<EvalRun>(`/v1/evaluations/${name}/run`, {}),
 
   mcpServers: () => get<McpServerList>("/v1/mcp/servers"),
   createMcpServer: (body: McpServerInput) => post<McpServerInfo>("/v1/mcp/servers", body),
