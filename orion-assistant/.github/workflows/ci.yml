@@ -34,7 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install --no-audit --no-fund
+      # `ci` respects the lockfile; `install` silently resolves new versions,
+      # which means CI can pass against dependencies nobody has reviewed.
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
       - run: npm run build
 
   docker:
