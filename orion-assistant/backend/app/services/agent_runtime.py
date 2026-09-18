@@ -272,6 +272,10 @@ async def run_agent(
                     "model": resp.model,
                     "latency_ms": resp.latency_ms,
                     "text": (resp.text or "")[:2000],
+                    # Which learned skills shaped this answer. Thumbs up/down on
+                    # the run reads this back to move their confidence, so it
+                    # has to survive in the persisted trace.
+                    "skill_ids": skill_ids,
                     "tool_calls": [tc.function.name for tc in resp.tool_calls],
                 }
             )
@@ -452,6 +456,7 @@ async def stream_agent(
                 "model": resp.model,
                 "latency_ms": resp.latency_ms,
                 "text": (resp.text or "")[:2000],
+                "skill_ids": skill_ids,
                 "tool_calls": [tc.function.name for tc in resp.tool_calls],
             }
             trace.append(entry)

@@ -293,3 +293,78 @@ def test_unknown_skill_404s(client):
     assert client.get("/v1/skills/nope").status_code == 404
     assert client.patch("/v1/skills/nope", json={"status": "active"}).status_code == 404
     assert client.delete("/v1/skills/nope").status_code == 404
+
+
+# ------------------------------------------- feedback actually moves confidence
+def test_thumbs_down_lowers_the_confidence_of_the_skills_that_were_used(client, db):
+    """The end-to-end path the README promises.
+
+    /v1/feedback looks up the run, reads which skills shaped the answer out of
+    the persisted trace, and reinforces them. That only works if the agent
+    writes skill_ids into the trace -- it did not, so the whole branch was
+    unreachable and thumbs up/down changed nothing.
+    """
+    from app.db.models import AgentRun
+
+    skill = Skill(
+        name="deploy-backend", description="deploy the backend",
+        instructions="1. run CI", trigger_keywords=["deploy"],
+        confidence=0.5, status="active",
+    )
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    run = AgentRun(
+        task="deploy the backend", state="succeeded", provider="local", model="m",
+        result="done", duration_ms=10,
+        trace=[{"step": 0, "skill_ids": [skill.id], "tool_calls": []}],
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    before = skill.confidence
+    response = client.post("/v1/feedback", json={"rating": "down", "run_id": run.id})
+    assert response.status_code == 200
+
+    db.refresh(skill)
+    assert skill.confidence < before, "a thumbs-down must reduce the skill's confidence"
+    assert skill.failures == 1
+
+
+def test_thumbs_up_raises_confidence(client, db):
+    from app.db.models import AgentRun
+
+    skill = Skill(
+        name="s2", description="d", instructions="i", trigger_keywords=[],
+        confidence=0.5, status="active",
+    )
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    run = AgentRun(
+        task="t", state="succeeded", provider="local", model="m", result="ok", duration_ms=5,
+        trace=[{"step": 0, "skill_ids": [skill.id]}],
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    client.post("/v1/feedback", json={"rating": "up", "run_id": run.id})
+    db.refresh(skill)
+    assert skill.confidence > 0.5
+    assert skill.successes == 1
+
+
+def test_the_agent_records_which_skills_it_used_in_the_trace():
+    """Guard the contract the feedback route depends on."""
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parent.parent
+        / "app" / "services" / "agent_runtime.py"
+    ).read_text()
+    assert source.count('"skill_ids": skill_ids') == 2, (
+        "both the buffered and streaming loops must record skill_ids, "
+        "or thumbs up/down silently stops working on that path"
+    )

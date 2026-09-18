@@ -1495,3 +1495,19 @@ kbd {
 }
 .jump-bottom:hover { color: var(--text); border-color: var(--accent-deep); }
 .chat-shell { position: relative; }
+
+/* Thumbs up/down on an answer. Hidden until the message is hovered, so the
+   transcript stays clean, but always visible once a rating is given. */
+.msg-feedback { display: inline-flex; gap: 2px; margin-left: 7px; vertical-align: middle; }
+
+.msg-feedback .rate {
+  display: grid; place-items: center; padding: 2px 3px;
+  border: 0; background: none; border-radius: var(--r-xs);
+  color: var(--muted-deep); opacity: 0;
+  transition: opacity var(--d-fast), color var(--d-fast), background var(--d-fast);
+}
+
+.msg:hover .msg-feedback .rate { opacity: 1; }
+.msg-feedback .rate:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.msg-feedback .rate.on { opacity: 1; color: var(--ok); }
+.msg-feedback .rate.on.down { color: var(--err); }

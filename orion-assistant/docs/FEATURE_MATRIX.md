@@ -17,7 +17,7 @@
 | Multimodal chat input | ✅ | Images to vision models; pdf/docx/pptx/xlsx extracted; audio transcribed; unreadable files reported honestly |
 | Model provisioning | ✅ | Hardware detection, tier ladder, one-command installer, in-UI download with progress |
 | Skill learning | ✅ | Successful runs distilled into reusable procedures, confidence reinforcement, auto-disable |
-| Feedback loop | ✅ | Thumbs up/down feeding skill confidence |
+| Feedback loop | ✅ | Thumbs up/down in chat, reinforcing the skills that shaped the answer |
 | Tool registry | ✅ | 13 builtin tools, JSON Schema, categories, risk tiers |
 | MCP server | ✅ | Read-only surface over memory and knowledge (opt-in) |
 | MCP client | ✅ | Register external servers; tools namespaced `server.tool` and policy-gated |
@@ -47,7 +47,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 395 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+| Tests | ✅ | 398 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

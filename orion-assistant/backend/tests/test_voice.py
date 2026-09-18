@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import wave
 
@@ -221,6 +222,10 @@ def test_catalog_is_populated():
 
 
 # -------------------------------------------------------------- tts plumbing
+@pytest.mark.skipif(
+    importlib.util.find_spec("numpy") is None,
+    reason="WAV encoding uses numpy, which ships with the optional TTS extra",
+)
 def test_wav_encoding_roundtrip():
     import numpy as np
 
@@ -234,6 +239,10 @@ def test_wav_encoding_roundtrip():
         assert handle.getnframes() == 4410
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("numpy") is None,
+    reason="WAV encoding uses numpy, which ships with the optional TTS extra",
+)
 def test_wav_encoding_clips_out_of_range_samples():
     import numpy as np
 
@@ -254,6 +263,10 @@ async def test_synthesize_rejects_unknown_voice():
         await voice.synthesize("hello", voice="Z9")
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("numpy") is None,
+    reason="WAV encoding uses numpy, which ships with the optional TTS extra",
+)
 async def test_synthesize_uses_the_engine(monkeypatch):
     """With a stub engine, the full synthesis path must produce valid WAV."""
     import numpy as np
@@ -283,6 +296,10 @@ async def test_synthesize_uses_the_engine(monkeypatch):
     assert engine.kwargs["text"] == "hello world"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("numpy") is None,
+    reason="WAV encoding uses numpy, which ships with the optional TTS extra",
+)
 async def test_synthesize_truncates_very_long_text(monkeypatch):
     import numpy as np
 
@@ -392,6 +409,10 @@ def test_speak_endpoint_503s_when_tts_unavailable(client, monkeypatch):
     assert response.json()["detail"]
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("numpy") is None,
+    reason="WAV encoding uses numpy, which ships with the optional TTS extra",
+)
 def test_speak_endpoint_returns_wav(client, monkeypatch):
     import numpy as np
 

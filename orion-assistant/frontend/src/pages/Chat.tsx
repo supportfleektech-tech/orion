@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowDown, Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
+import { ArrowDown, Archive, Bot, ThumbsDown, ThumbsUp, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
 import {
   api,
   chatStream,
@@ -56,6 +56,7 @@ export function Chat() {
   const voiceControl = useVoiceControl();
   const endRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [rated, setRated] = useState<Record<string, "up" | "down">>({});
   const [personas, setPersonas] = useState<{ id: string; label: string; description: string }[]>([]);
   const [persona, setPersona] = useState("default");
 
@@ -123,6 +124,27 @@ export function Chat() {
    * conversation has no id yet, so we hold the value and let the first send
    * create the row; the effect below writes it once the id exists.
    */
+  /**
+   * Rate an answer.
+   *
+   * The backend reads the run's trace to find which learned skills shaped it
+   * and moves their confidence, so this is what makes the assistant improve
+   * from correction rather than only from whether a run crashed.
+   */
+  async function rate(runId: string, rating: "up" | "down") {
+    setRated((r) => ({ ...r, [runId]: rating }));
+    try {
+      await api.sendFeedback({ rating, run_id: runId });
+    } catch (err) {
+      setRated((r) => {
+        const next = { ...r };
+        delete next[runId];
+        return next;
+      });
+      notify(err instanceof Error ? err.message : String(err), "err");
+    }
+  }
+
   async function choosePersona(next: string) {
     setPersona(next);
     if (!conversationId) return;
@@ -296,6 +318,16 @@ export function Chat() {
           });
         },
         onDone: (info) => {
+          setMessages((m) => {
+            const copy = [...m];
+            for (let i = copy.length - 1; i >= 0; i -= 1) {
+              if (copy[i].role === "assistant") {
+                copy[i] = { ...copy[i], run_id: info.run_id };
+                break;
+              }
+            }
+            return copy;
+          });
           setLastMeta({
             conversation_id: conversationId ?? "",
             run_id: info.run_id,
@@ -490,6 +522,26 @@ export function Chat() {
                   <div className="msg-role">
                     {m.role}
                     {m.model ? ` · ${m.model}` : ""}
+                    {m.role === "assistant" && !m.streaming && m.run_id && (
+                      <span className="msg-feedback">
+                        <button
+                          className={`rate ${rated[m.run_id] === "up" ? "on" : ""}`}
+                          title="This answer was good"
+                          aria-label="Good answer"
+                          onClick={() => void rate(m.run_id!, "up")}
+                        >
+                          <ThumbsUp size={12} />
+                        </button>
+                        <button
+                          className={`rate ${rated[m.run_id] === "down" ? "on down" : ""}`}
+                          title="This answer was wrong or unhelpful"
+                          aria-label="Bad answer"
+                          onClick={() => void rate(m.run_id!, "down")}
+                        >
+                          <ThumbsDown size={12} />
+                        </button>
+                      </span>
+                    )}
                     {m.role === "assistant" && !m.streaming && m.content && voiceControl.ttsAvailable && (
                       <button
                         className="speak-btn"

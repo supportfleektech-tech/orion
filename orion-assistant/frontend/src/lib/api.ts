@@ -279,6 +279,8 @@ export interface ChatMessage {
   pending?: boolean;
   /** True while tokens are still arriving for this bubble. */
   streaming?: boolean;
+  /** The agent run behind this answer, so feedback can be attributed to it. */
+  run_id?: string;
 }
 export interface ApprovalItem {
   id: string;
