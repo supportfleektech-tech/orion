@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -12,6 +14,7 @@ from app.api.schemas import (
     ApprovalDecision,
     AutomationRequest,
     ChatRequest,
+    ConversationPatch,
     IngestRequest,
     IngestTextRequest,
     KillSwitchRequest,
@@ -50,6 +53,7 @@ from app.services.model_router import router as model_router
 from app.services.runtime_settings import save_overrides
 from app.tools.registry import registry
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 BOOT_TIME = time.time()
 
@@ -181,14 +185,34 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     async def generator():
         yield f'event: start\ndata: {{"conversation_id": "{conversation.id}"}}\n\n'
         final = ""
-        async for event in stream_agent(db, req.message, conversation.id, req.mode):
-            if event.startswith("event: message"):
-                import json as _json
-
-                final = _json.loads(event.split("data: ", 1)[1].strip())["content"]
-            yield event
-        db.add(Message(conversation_id=conversation.id, role="assistant", content=final))
-        db.commit()
+        provider = model = None
+        try:
+            async for event in stream_agent(
+                db, req.message, conversation.id, req.mode, auto_approve=req.auto_approve
+            ):
+                if event.startswith("event: message\n"):
+                    final = json.loads(event.split("data: ", 1)[1].strip()).get("content", "")
+                elif event.startswith("event: done\n"):
+                    done = json.loads(event.split("data: ", 1)[1].strip())
+                    provider, model = done.get("provider"), done.get("model")
+                yield event
+        except Exception as exc:  # client disconnects, model blowups
+            log.exception("Chat stream failed")
+            yield f'event: error\ndata: {json.dumps({"message": str(exc)[:500]})}\n\n'
+        finally:
+            # Persist whatever we produced, even on early disconnect.
+            if final:
+                db.add(
+                    Message(
+                        conversation_id=conversation.id,
+                        role="assistant",
+                        content=final,
+                        provider=provider,
+                        model=model,
+                    )
+                )
+                conversation.updated_at = datetime.now(UTC)
+                db.commit()
 
     return StreamingResponse(
         generator(),
@@ -198,9 +222,13 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/v1/conversations", tags=["chat"])
-def list_conversations(db: Session = Depends(get_db), limit: int = 50):
+def list_conversations(db: Session = Depends(get_db), limit: int = 50, include_archived: bool = False):
+    stmt = select(Conversation)
+    if not include_archived:
+        stmt = stmt.where(Conversation.archived.is_(False))
+    # Pinned conversations float to the top, then most recently updated.
     rows = db.scalars(
-        select(Conversation).where(Conversation.archived.is_(False)).order_by(Conversation.updated_at.desc()).limit(limit)
+        stmt.order_by(Conversation.pinned.desc(), Conversation.updated_at.desc()).limit(limit)
     ).all()
     return {
         "conversations": [
@@ -208,6 +236,7 @@ def list_conversations(db: Session = Depends(get_db), limit: int = 50):
                 "id": c.id,
                 "title": c.title,
                 "pinned": c.pinned,
+                "archived": c.archived,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
                 "message_count": db.scalar(
                     select(func.count()).select_from(Message).where(Message.conversation_id == c.id)
@@ -240,6 +269,28 @@ def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
             }
             for m in messages
         ],
+    }
+
+
+@router.patch("/v1/conversations/{conversation_id}", tags=["chat"], dependencies=[Depends(require_auth)])
+def update_conversation(conversation_id: str, patch: ConversationPatch, db: Session = Depends(get_db)):
+    """Rename, pin or archive a conversation."""
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(404, "Conversation not found")
+
+    changes = patch.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(400, "No fields to update")
+    for key, value in changes.items():
+        setattr(conversation, key, value)
+    conversation.updated_at = datetime.now(UTC)
+    db.commit()
+    return {
+        "id": conversation.id,
+        "title": conversation.title,
+        "pinned": conversation.pinned,
+        "archived": conversation.archived,
     }
 
 

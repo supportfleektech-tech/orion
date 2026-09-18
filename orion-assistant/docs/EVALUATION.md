@@ -6,7 +6,7 @@
 ./scripts/run-tests.sh
 ```
 
-44 backend tests covering:
+69 backend tests covering:
 
 * **API integration** — health, status, tools, chat, conversations, memory, knowledge, settings,
   kill switch, automations, metrics, audit, and the full approval flow (request → approve → execute)
@@ -16,6 +16,12 @@
 * **Tools and policy** — arithmetic allowlist, injection rejection, exponent bounds, registry
   schema generation, risk-tier approval requirement, kill-switch enforcement, and the guarantee that
   optional dependencies (playwright, mcp) are never imported at boot
+* **Agent loop** — the real tool-calling cycle against a mock OpenAI-compatible server:
+  plain answers, single and multi-step tool chains, parallel tool calls in one turn, bounded
+  iteration, failing and unknown tools, malformed arguments, approval gating mid-loop, kill-switch
+  enforcement, provider failure falling back to degraded, trace persistence, and history replay
+* **Streaming** — SSE event sequence and ordering (`tool_start` before `tool_result` before
+  `message`), conversation persistence, run recording, and tool failures surfaced mid-stream
 * **Auth** — token required/rejected/accepted, malformed headers, protection of destructive
   endpoints, and reads staying public
 * **Configuration** — runtime setting overrides persist across restarts; secrets are not mutable

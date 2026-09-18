@@ -75,3 +75,36 @@ def test_automation_crud(client):
 def test_metrics_and_audit(client):
     assert "router" in client.get("/v1/system/metrics").json()
     assert "events" in client.get("/v1/audit").json()
+
+
+def test_conversation_rename(client):
+    cid = client.post("/v1/chat", json={"message": "rename me"}).json()["conversation_id"]
+    body = client.patch(f"/v1/conversations/{cid}", json={"title": "Renamed thread"}).json()
+    assert body["title"] == "Renamed thread"
+    listed = client.get("/v1/conversations").json()["conversations"]
+    assert any(c["id"] == cid and c["title"] == "Renamed thread" for c in listed)
+
+
+def test_conversation_pin_sorts_first(client):
+    first = client.post("/v1/chat", json={"message": "older"}).json()["conversation_id"]
+    client.post("/v1/chat", json={"message": "newer"})
+    client.patch(f"/v1/conversations/{first}", json={"pinned": True})
+    listed = client.get("/v1/conversations").json()["conversations"]
+    assert listed[0]["id"] == first, "pinned conversations must sort to the top"
+
+
+def test_conversation_archive_hides_by_default(client):
+    cid = client.post("/v1/chat", json={"message": "archive me"}).json()["conversation_id"]
+    client.patch(f"/v1/conversations/{cid}", json={"archived": True})
+
+    visible = client.get("/v1/conversations").json()["conversations"]
+    assert all(c["id"] != cid for c in visible)
+
+    with_archived = client.get("/v1/conversations", params={"include_archived": True}).json()["conversations"]
+    assert any(c["id"] == cid for c in with_archived)
+
+
+def test_conversation_patch_validation(client):
+    cid = client.post("/v1/chat", json={"message": "validate"}).json()["conversation_id"]
+    assert client.patch(f"/v1/conversations/{cid}", json={}).status_code == 400
+    assert client.patch("/v1/conversations/does-not-exist", json={"title": "x"}).status_code == 404

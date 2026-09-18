@@ -34,7 +34,25 @@ When `AUTH_ENABLED=true`, mutating endpoints require `Authorization: Bearer <ADM
 
 `POST /v1/chat/stream` returns SSE events: `start`, `status`, `context`, `trace`, `message`, `done`.
 
-Also: `GET /v1/conversations`, `GET /v1/conversations/{id}`, `DELETE /v1/conversations/{id}`.
+`POST /v1/chat/stream` emits these SSE events in order:
+
+| Event | Payload |
+|---|---|
+| `start` | `{conversation_id}` |
+| `status` | `{stage, step?}` — `retrieving_context`, `reasoning` |
+| `context` | `{memories, knowledge}` |
+| `trace` | per-iteration `{step, provider, model, latency_ms, text, tool_calls}` |
+| `tool_start` | `{step, tool, arguments}` — emitted *before* execution |
+| `tool_result` | `{step, tool, result_ok, error?}` |
+| `message` | `{role, content}` — the final answer |
+| `done` | `{run_id, provider, model, degraded, duration_ms}` |
+| `error` | `{message}` — only on failure |
+
+Also: `GET /v1/conversations` (`?include_archived=`), `GET /v1/conversations/{id}`,
+`DELETE /v1/conversations/{id}`, and:
+
+`PATCH /v1/conversations/{id}` — `{title?, pinned?, archived?}`. Pinned conversations sort first;
+archived ones are hidden from the default list.
 
 ## Memory
 

@@ -12,8 +12,8 @@ governance, automations, Docker packaging and CI are all implemented and tested.
 
 | Capability | Implementation |
 |---|---|
-| **Chat** | Multi-turn conversations with history, persistence, routing mode selection |
-| **Agent runtime** | Tool-calling loop with context injection, tracing and bounded iterations |
+| **Chat** | Multi-turn conversations with history, persistence, routing mode selection, pin/rename/archive |
+| **Agent runtime** | Tool-calling loop with context injection, tracing, bounded iterations, and live SSE streaming of tool activity |
 | **Model routing** | Local-first (Ollama) → cloud burst (OpenRouter free tier) → graceful degraded mode |
 | **Memory** | Hybrid retrieval (vector + keyword + confidence + pinning), upsert by key, CRUD |
 | **Knowledge / RAG** | Upload, paste or ingest paths; chunking, embedding, semantic search, library management |
@@ -62,6 +62,18 @@ cd orion-assistant
 
 Open <http://localhost:5173>. The Vite dev server proxies `/v1`, `/health` and `/docs` to the API,
 so no CORS configuration is needed.
+
+### Try it with no model installed
+
+```bash
+python3 scripts/demo_model.py 11435 &          # deterministic demo responder
+OLLAMA_BASE_URL=http://127.0.0.1:11435/v1 OLLAMA_MODEL=orion-demo ./scripts/run-backend.sh
+```
+
+`scripts/demo_model.py` is **not an LLM** — it is a rule-based responder that speaks the OpenAI
+chat-completions protocol including tool calling, so you can exercise the complete agent loop
+(tool selection → execution → result → answer) with no download and no API key. Ask it to
+calculate something, check the time, list files, or search memory.
 
 ### Enable generative answers
 
@@ -135,7 +147,9 @@ GET    /v1/settings · PATCH /v1/settings
 ./scripts/run-tests.sh
 ```
 
-* 44 backend tests (API integration, retrieval, memory, tools, policy, ingestion, auth, settings persistence, prompt loading)
+* 69 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+  model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
+  kill switch) and the SSE streaming contract
 * `ruff` lint clean
 * Strict TypeScript build with `noUnusedLocals` / `noUnusedParameters`
 * GitHub Actions runs backend tests, a production-dependency boot check, the frontend build and both Docker image builds

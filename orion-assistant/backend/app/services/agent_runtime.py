@@ -253,21 +253,129 @@ async def run_agent(
     }
 
 
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
 async def stream_agent(
-    db: Session, task: str, conversation_id: str | None = None, mode: str = "auto"
+    db: Session,
+    task: str,
+    conversation_id: str | None = None,
+    mode: str = "auto",
+    auto_approve: bool = False,
 ) -> AsyncIterator[str]:
-    """Server-sent-event style stream of agent progress."""
+    """Stream agent progress as server-sent events.
 
-    def sse(event: str, payload: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+    Emits context, then each reasoning step and tool call *as it happens*, then
+    the final message. Runs the agent loop inline rather than delegating to
+    run_agent, so events arrive incrementally instead of all at once at the end.
+    """
+    started = time.perf_counter()
 
-    yield sse("status", {"stage": "retrieving_context"})
-    memories, chunks, _ = await build_context(db, task)
-    yield sse("context", {"memories": memories, "knowledge": chunks})
-    yield sse("status", {"stage": "reasoning"})
+    yield _sse("status", {"stage": "retrieving_context"})
+    memories, chunks, context = await build_context(db, task)
+    yield _sse("context", {"memories": memories, "knowledge": chunks})
 
-    result = await run_agent(db, task, conversation_id=conversation_id, mode=mode)
-    for entry in result["trace"]:
-        yield sse("trace", entry)
-    yield sse("message", {"role": "assistant", "content": result["result"]})
-    yield sse("done", {k: result[k] for k in ("run_id", "provider", "model", "degraded", "duration_ms")})
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": context},
+        *conversation_history(db, conversation_id),
+        {"role": "user", "content": task},
+    ]
+
+    run = AgentRun(conversation_id=conversation_id, task=task[:4000], state="running")
+    db.add(run)
+    db.commit()
+
+    trace: list[dict[str, Any]] = []
+    provider, model, final_text = "offline", "degraded", ""
+    degraded = False
+    tools = registry.openai_schemas()
+
+    try:
+        for step in range(settings.max_tool_loops):
+            yield _sse("status", {"stage": "reasoning", "step": step})
+            resp = await router.chat(messages, tools=tools, mode=mode, complexity=estimate_complexity(task))
+            provider, model, final_text, degraded = resp.provider, resp.model, resp.text, resp.degraded
+
+            entry = {
+                "step": step,
+                "provider": resp.provider,
+                "model": resp.model,
+                "latency_ms": resp.latency_ms,
+                "text": (resp.text or "")[:2000],
+                "tool_calls": [tc.function.name for tc in resp.tool_calls],
+            }
+            trace.append(entry)
+            yield _sse("trace", entry)
+            messages.append(_message_dict(resp.message))
+
+            if not resp.tool_calls:
+                break
+
+            for call in resp.tool_calls:
+                try:
+                    args = json.loads(call.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                yield _sse("tool_start", {"step": step, "tool": call.function.name, "arguments": args})
+                result = await execute_tool(db, call.function.name, args, auto_approve=auto_approve)
+                tool_entry = {
+                    "step": step,
+                    "tool": call.function.name,
+                    "arguments": args,
+                    "result_ok": result.get("ok"),
+                }
+                trace.append(tool_entry)
+                yield _sse("tool_result", {**tool_entry, "error": result.get("error")})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": json.dumps(result, ensure_ascii=False, default=str)[:8000],
+                    }
+                )
+
+        if degraded:
+            grounded = extractive_answer(task, memories, chunks)
+            if grounded:
+                final_text = grounded
+                trace.append({"step": "fallback", "mode": "extractive_retrieval"})
+        run.state = "succeeded"
+    except Exception as exc:
+        log.exception("Streaming agent run failed")
+        run.state = "failed"
+        run.error = str(exc)[:1000]
+        final_text = final_text or f"Agent run failed: {exc}"
+        yield _sse("error", {"message": str(exc)[:500]})
+    finally:
+        run.provider = provider
+        run.model = model
+        run.result = (final_text or "")[:8000]
+        run.trace = trace
+        run.duration_ms = int((time.perf_counter() - started) * 1000)
+        db.commit()
+
+    if final_text and not degraded:
+        try:
+            await write_memory(
+                db,
+                f"Task: {task[:400]} | Outcome: {final_text[:800]}",
+                kind="interaction_summary",
+                source="agent",
+                confidence=0.35,
+            )
+        except Exception:
+            db.rollback()
+
+    yield _sse("message", {"role": "assistant", "content": final_text})
+    yield _sse(
+        "done",
+        {
+            "run_id": run.id,
+            "provider": provider,
+            "model": model,
+            "degraded": degraded,
+            "duration_ms": run.duration_ms,
+        },
+    )

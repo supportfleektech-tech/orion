@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, Loader2, MessageSquarePlus, Send, Trash2, UserRound, Wrench } from "lucide-react";
-import { api, ChatMessage, ChatResponse, ConversationSummary } from "../lib/api";
+import { Archive, Bot, Loader2, MessageSquarePlus, Pencil, Pin, PinOff, Send, Trash2, UserRound, Wrench } from "lucide-react";
+import { api, chatStream, ChatMessage, ChatResponse, ConversationSummary, KnowledgeHit, MemoryItem } from "../lib/api";
 import { Badge, Toast, timeAgo } from "../components/ui";
 import { useToast } from "../hooks/useApi";
 
@@ -14,6 +14,8 @@ export function Chat() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState("auto");
   const [lastMeta, setLastMeta] = useState<ChatResponse | null>(null);
+  const [stage, setStage] = useState<string>("");
+  const [liveTools, setLiveTools] = useState<{ tool: string; ok?: boolean }[]>([]);
   const { toast, notify } = useToast();
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -60,21 +62,74 @@ export function Chat() {
     setInput("");
     setMessages((m) => [...m, { role: "user", content: text }]);
     setBusy(true);
+    setLiveTools([]);
+    setStage("Retrieving context…");
+
+    let streamedContext: { memories: MemoryItem[]; knowledge: KnowledgeHit[] } = { memories: [], knowledge: [] };
+    let answered = false;
+
     try {
-      const res = await api.chat(text, conversationId, mode);
-      setConversationId(res.conversation_id);
-      setLastMeta(res);
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: res.result || "No response returned.", provider: res.provider, model: res.model },
-      ]);
+      const convo = await chatStream(text, conversationId, mode, {
+        onContext: (ctx) => {
+          streamedContext = ctx;
+          setStage("Reasoning…");
+        },
+        onStatus: (s) => {
+          if (s.stage === "reasoning") setStage(s.step ? `Reasoning (step ${s.step + 1})…` : "Reasoning…");
+        },
+        onToolStart: (t) => {
+          setStage(`Running ${t.tool}…`);
+          setLiveTools((prev) => [...prev, { tool: t.tool }]);
+        },
+        onToolResult: (t) => {
+          setLiveTools((prev) =>
+            prev.map((x, i) => (i === prev.length - 1 && x.tool === t.tool ? { ...x, ok: t.result_ok } : x)),
+          );
+        },
+        onMessage: (content) => {
+          answered = true;
+          setMessages((m) => [...m, { role: "assistant", content: content || "No response returned." }]);
+        },
+        onDone: (info) => {
+          setLastMeta({
+            conversation_id: conversationId ?? "",
+            run_id: info.run_id,
+            result: "",
+            provider: info.provider,
+            model: info.model,
+            degraded: info.degraded,
+            duration_ms: info.duration_ms,
+            trace: [],
+            memories: streamedContext.memories ?? [],
+            knowledge: streamedContext.knowledge ?? [],
+          });
+        },
+        onError: (message) => notify(message, "err"),
+      });
+
+      if (convo) setConversationId(convo);
+      if (!answered) throw new Error("Stream ended without a reply");
       void loadConversations();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      notify(message, "err");
-      setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${message}` }]);
+      // Streaming can be blocked by proxies that buffer responses; fall back.
+      try {
+        const res = await api.chat(text, conversationId, mode);
+        setConversationId(res.conversation_id);
+        setLastMeta(res);
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: res.result || "No response returned.", provider: res.provider, model: res.model },
+        ]);
+        void loadConversations();
+      } catch (fallbackErr) {
+        const message = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        notify(message, "err");
+        setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${message}` }]);
+      }
     } finally {
       setBusy(false);
+      setStage("");
+      setLiveTools([]);
     }
   }
 
@@ -105,23 +160,63 @@ export function Chat() {
           {conversations.map((c) => (
             <div key={c.id} className={`convo-item ${c.id === conversationId ? "active" : ""}`}>
               <button onClick={() => setConversationId(c.id)}>
-                <strong>{c.title || "Untitled"}</strong>
+                <strong>{c.pinned ? "📌 " : ""}{c.title || "Untitled"}</strong>
                 <span>{c.message_count} msgs · {timeAgo(c.updated_at)}</span>
               </button>
-              <button
-                className="icon danger"
-                title="Delete"
-                onClick={async () => {
-                  await api.deleteConversation(c.id);
-                  if (c.id === conversationId) {
-                    setConversationId(undefined);
-                    setMessages([]);
-                  }
-                  void loadConversations();
-                }}
-              >
-                <Trash2 size={13} />
-              </button>
+              <div className="convo-actions">
+                <button
+                  className="icon"
+                  title={c.pinned ? "Unpin" : "Pin"}
+                  onClick={async () => {
+                    await api.updateConversation(c.id, { pinned: !c.pinned });
+                    void loadConversations();
+                  }}
+                >
+                  {c.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                </button>
+                <button
+                  className="icon"
+                  title="Rename"
+                  onClick={async () => {
+                    const title = window.prompt("Rename conversation", c.title);
+                    if (title?.trim()) {
+                      await api.updateConversation(c.id, { title: title.trim() });
+                      void loadConversations();
+                    }
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  className="icon"
+                  title="Archive"
+                  onClick={async () => {
+                    await api.updateConversation(c.id, { archived: true });
+                    if (c.id === conversationId) {
+                      setConversationId(undefined);
+                      setMessages([]);
+                    }
+                    notify("Conversation archived");
+                    void loadConversations();
+                  }}
+                >
+                  <Archive size={12} />
+                </button>
+                <button
+                  className="icon danger"
+                  title="Delete"
+                  onClick={async () => {
+                    await api.deleteConversation(c.id);
+                    if (c.id === conversationId) {
+                      setConversationId(undefined);
+                      setMessages([]);
+                    }
+                    void loadConversations();
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
             </div>
           ))}
           {conversations.length === 0 && <p className="muted small">No conversations yet.</p>}
@@ -174,7 +269,18 @@ export function Chat() {
               <div className="msg-icon"><Bot size={16} /></div>
               <div>
                 <div className="msg-role">assistant</div>
-                <div className="msg-body thinking"><Loader2 size={14} className="spin" /> Retrieving context and reasoning…</div>
+                <div className="msg-body thinking">
+                    <Loader2 size={14} className="spin" /> {stage || "Working…"}
+                  </div>
+                  {liveTools.length > 0 && (
+                    <div className="live-tools">
+                      {liveTools.map((t, i) => (
+                        <span key={`${t.tool}-${i}`} className={t.ok === undefined ? "running" : t.ok ? "ok" : "err"}>
+                          <Wrench size={11} /> {t.tool}
+                        </span>
+                      ))}
+                    </div>
+                  )}
               </div>
             </div>
           )}

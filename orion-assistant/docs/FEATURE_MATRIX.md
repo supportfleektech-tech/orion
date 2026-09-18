@@ -5,8 +5,8 @@
 | Local LLM routing (Ollama) | ✅ | OpenAI-compatible, tool calling |
 | Cloud burst (OpenRouter) | ✅ | Ordered failover across fallback models |
 | Degraded / offline mode | ✅ | Extractive retrieval answers, never 500s |
-| Conversation persistence | ✅ | History, list, load, delete |
-| Streaming endpoint | ✅ | SSE at `/v1/chat/stream` |
+| Conversation persistence | ✅ | History, list, load, delete, pin, rename, archive |
+| Streaming | ✅ | Incremental SSE, wired into the chat UI with live tool chips |
 | Agent tool loop | ✅ | Bounded iterations, full trace |
 | Memory store | ✅ | Upsert by key, pin, confidence, CRUD |
 | Hybrid retrieval | ✅ | Vector + keyword + confidence + pin boost |
@@ -30,7 +30,7 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
-| Tests | ✅ | 44 backend tests, ruff clean, strict TS |
+| Tests | ✅ | 69 backend tests incl. full agent loop + streaming, ruff clean, strict TS |
 
 ## Deliberately out of scope for v1
 

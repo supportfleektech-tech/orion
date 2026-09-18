@@ -305,3 +305,18 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .messages { padding: 20px 15px; }
   .chat-layout { height: auto; padding: 12px; }
 }
+
+/* live tool activity during streaming */
+.live-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.live-tools span {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 3px 8px;
+  border-radius: 999px; border: 1px solid #2b3648; background: #101724; color: #9aa7ba;
+}
+.live-tools span.running { border-color: #2c3e5e; color: #9fc3ff; animation: pulse 1.2s ease-in-out infinite; }
+.live-tools span.ok { border-color: #285241; color: var(--ok); }
+.live-tools span.err { border-color: #5c2f2f; color: var(--err); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+.convo-item { flex-wrap: wrap; }
+.convo-actions { display: flex; gap: 3px; width: 100%; justify-content: flex-end; padding: 0 4px 4px; }
+.convo-actions .icon { width: 24px; height: 24px; border-radius: 6px; }

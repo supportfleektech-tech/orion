@@ -21,6 +21,12 @@ class IngestTextRequest(BaseModel):
     content: str = Field(min_length=1)
 
 
+class ConversationPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    pinned: bool | None = None
+    archived: bool | None = None
+
+
 class MemoryRequest(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     kind: str = "fact"

@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(p: string) => request<T>(p);
 const post = <T>(p: string, body?: unknown) =>
   request<T>(p, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
-const patch = <T>(p: string, body: unknown) => request<T>(p, { method: "PATCH", body: JSON.stringify(body) });
+const patch_ = <T>(p: string, body: unknown) => request<T>(p, { method: "PATCH", body: JSON.stringify(body) });
 const del = <T>(p: string) => request<T>(p, { method: "DELETE" });
 
 /* ----------------------------------------------------------------- types */
@@ -120,6 +120,7 @@ export interface ConversationSummary {
   id: string;
   title: string;
   pinned: boolean;
+  archived?: boolean;
   updated_at: string;
   message_count: number;
 }
@@ -193,6 +194,100 @@ export interface AppSettings {
 }
 
 /* -------------------------------------------------------------- endpoints */
+export interface StreamHandlers {
+  onContext?: (ctx: { memories: MemoryItem[]; knowledge: KnowledgeHit[] }) => void;
+  onTrace?: (entry: TraceEntry) => void;
+  onToolStart?: (info: { tool: string; arguments: Record<string, unknown> }) => void;
+  onToolResult?: (info: { tool: string; result_ok: boolean; error?: string }) => void;
+  onStatus?: (info: { stage: string; step?: number }) => void;
+  onMessage?: (content: string) => void;
+  onDone?: (info: { run_id: string; provider: string; model: string; degraded: boolean; duration_ms: number }) => void;
+  onError?: (message: string) => void;
+}
+
+/**
+ * Stream a chat turn over SSE, surfacing tool activity as it happens.
+ * Falls back to the caller's error handler if the stream cannot be opened.
+ */
+export async function chatStream(
+  message: string,
+  conversationId: string | undefined,
+  mode: string,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const res = await fetch(`${API_BASE}/v1/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, conversation_id: conversationId, mode }),
+    signal,
+  });
+  if (!res.ok || !res.body) throw new Error(`Stream failed: ${res.status} ${res.statusText}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let conversation: string | undefined = conversationId;
+
+  const dispatch = (event: string, data: string) => {
+    let payload: any = {};
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      return;
+    }
+    switch (event) {
+      case "start":
+        conversation = payload.conversation_id;
+        break;
+      case "context":
+        handlers.onContext?.(payload);
+        break;
+      case "status":
+        handlers.onStatus?.(payload);
+        break;
+      case "trace":
+        handlers.onTrace?.(payload);
+        break;
+      case "tool_start":
+        handlers.onToolStart?.(payload);
+        break;
+      case "tool_result":
+        handlers.onToolResult?.(payload);
+        break;
+      case "message":
+        handlers.onMessage?.(payload.content ?? "");
+        break;
+      case "done":
+        handlers.onDone?.(payload);
+        break;
+      case "error":
+        handlers.onError?.(payload.message ?? "Unknown streaming error");
+        break;
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      let event = "message";
+      let data = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) data = line.slice(6);
+      }
+      if (data) dispatch(event, data);
+    }
+  }
+  return conversation;
+}
+
 export const api = {
   status: () => get<SystemStatus>("/v1/system/status"),
   metrics: () => get<Metrics>("/v1/system/metrics"),
@@ -202,6 +297,8 @@ export const api = {
   conversations: () => get<{ conversations: ConversationSummary[] }>("/v1/conversations"),
   conversation: (id: string) => get<{ id: string; title: string; messages: ChatMessage[] }>(`/v1/conversations/${id}`),
   deleteConversation: (id: string) => del<{ deleted: boolean }>(`/v1/conversations/${id}`),
+  updateConversation: (id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) =>
+    patch_<ConversationSummary>(`/v1/conversations/${id}`, patch),
 
   memories: (kind?: string) => get<{ memories: MemoryItem[] }>(`/v1/memory${kind ? `?kind=${kind}` : ""}`),
   searchMemory: (q: string) => get<{ results: MemoryItem[] }>(`/v1/memory/search?q=${encodeURIComponent(q)}`),
@@ -245,7 +342,7 @@ export const api = {
   audit: () => get<{ events: AuditItem[] }>("/v1/audit"),
 
   settings: () => get<AppSettings>("/v1/settings"),
-  updateSettings: (body: Partial<AppSettings>) => patch<AppSettings>("/v1/settings", body),
+  updateSettings: (body: Partial<AppSettings>) => patch_<AppSettings>("/v1/settings", body),
   killSwitch: (enabled: boolean, reason = "") =>
     post<{ enabled: boolean; reason: string }>("/v1/security/kill-switch", { enabled, reason }),
 };
