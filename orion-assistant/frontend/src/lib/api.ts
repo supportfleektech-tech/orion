@@ -200,6 +200,23 @@ export interface MemoryItem {
   score: number;
   created_at: string | null;
 }
+/** A single file: the shape returned when `path` points at one document. */
+export interface IngestedDocument {
+  document_id: string;
+  name: string;
+  chunks: number;
+  status: "ingested" | "unchanged" | string;
+}
+
+/** A directory ingest returns a batch summary instead. */
+export interface IngestBatch {
+  status: "batch";
+  count: number;
+  results: IngestedDocument[];
+}
+
+export type IngestResult = IngestedDocument | IngestBatch;
+
 export interface KnowledgeHit {
   id: string;
   document_id: string;
@@ -571,7 +588,7 @@ export const api = {
 
   documents: () => get<{ documents: DocumentItem[] }>("/v1/knowledge/documents"),
   ingestText: (name: string, content: string) => post<unknown>("/v1/knowledge/ingest-text", { name, content }),
-  ingestPath: (path: string) => post<unknown>("/v1/knowledge/ingest", { path }),
+  ingestPath: (path: string) => post<IngestResult>("/v1/knowledge/ingest", { path }),
   uploadDocument: (file: File) => {
     const form = new FormData();
     form.append("file", file);

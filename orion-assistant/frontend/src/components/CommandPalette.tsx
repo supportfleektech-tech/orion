@@ -41,17 +41,41 @@ interface Action {
   keywords?: string;
 }
 
-/** Subsequence match, so "mcps" finds "MCP servers". */
-function fuzzy(needle: string, haystack: string): boolean {
-  const n = needle.toLowerCase();
-  const h = haystack.toLowerCase();
-  if (h.includes(n)) return true;
+/**
+ * Score a candidate against the query. Returns -1 for no match.
+ *
+ * Ranking matters as much as matching: a plain subsequence test made "kill"
+ * find "Skills" (s-k-i-l-l) and sort it above "Engage the kill switch", so the
+ * top hit for a panic command was the wrong thing entirely. Contiguous
+ * matches now beat scattered ones, and a match at a word boundary beats one
+ * buried mid-word.
+ */
+function score(needle: string, label: string, keywords = ""): number {
+  const n = needle.toLowerCase().trim();
+  if (!n) return 0;
+
+  const lab = label.toLowerCase();
+  const hay = `${lab} ${keywords.toLowerCase()}`;
+
+  if (lab === n) return 1000;
+  if (lab.startsWith(n)) return 900 - lab.length;
+
+  const wordStart = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+  if (wordStart.test(lab)) return 800 - lab.length;
+  if (lab.includes(n)) return 700 - lab.length;
+
+  // Keyword hits rank below any label hit but above a scattered subsequence.
+  if (wordStart.test(hay)) return 600;
+  if (hay.includes(n)) return 500;
+
+  // Last resort: subsequence over the label only, so keyword soup cannot
+  // produce surprising matches.
   let i = 0;
-  for (const char of h) {
+  for (const char of lab) {
     if (char === n[i]) i += 1;
-    if (i === n.length) return true;
+    if (i === n.length) return 100;
   }
-  return false;
+  return -1;
 }
 
 export function CommandPalette() {
@@ -112,7 +136,11 @@ export function CommandPalette() {
   const results = useMemo(() => {
     const q = query.trim();
     if (!q) return actions;
-    return actions.filter((a) => fuzzy(q, `${a.label} ${a.keywords ?? ""}`));
+    return actions
+      .map((action) => ({ action, rank: score(q, action.label, action.keywords) }))
+      .filter((entry) => entry.rank >= 0)
+      .sort((a, b) => b.rank - a.rank)
+      .map((entry) => entry.action);
   }, [query, actions]);
 
   // Global shortcut. Cmd+K on macOS, Ctrl+K elsewhere.
@@ -120,7 +148,16 @@ export function CommandPalette() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((v) => !v);
+        setOpen((wasOpen) => {
+          if (!wasOpen) {
+            // Reset synchronously on open. Doing it in an effect meant the
+            // reset could land after the user's first arrow key and throw
+            // their selection away -- a real race, and a flaky test.
+            setQuery("");
+            setCursor(0);
+          }
+          return !wasOpen;
+        });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -128,15 +165,9 @@ export function CommandPalette() {
   }, []);
 
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setCursor(0);
-      // Wait a frame so the input exists before focusing it.
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
+    // Wait a frame so the input exists before focusing it.
+    if (open) requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
-
-  useEffect(() => setCursor(0), [query]);
 
   // Keep the highlighted row in view when navigating by keyboard.
   useEffect(() => {
@@ -199,7 +230,10 @@ export function CommandPalette() {
               <input
                 ref={inputRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setCursor(0);
+                }}
                 onKeyDown={onKeyDown}
                 placeholder="Search pages, run an action, or ask a question…"
                 aria-label="Command"

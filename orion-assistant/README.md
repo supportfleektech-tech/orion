@@ -211,7 +211,8 @@ POST   /v1/voice/transcribe
 ./scripts/run-tests.sh
 ```
 
-* 398 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 37 frontend tests (Vitest + Testing Library) covering the command palette,
+  shortcut overlay and UI primitives, plus 398 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess
@@ -243,5 +244,17 @@ orion-assistant/
 ├── docker-compose.yml
 └── .env.example
 ```
+
+## Verifying a real model
+
+CI runs against a mock LLM. To prove the real path end to end on your machine:
+
+```bash
+./scripts/setup-local-model.sh    # installs Ollama and picks a model for your RAM
+./scripts/run-backend.sh
+./scripts/verify-real-model.sh    # tool calls, streaming, grounding, memory, evals
+```
+
+See [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) for how to read the results.
 
 Licensed under the terms in `LICENSE`.

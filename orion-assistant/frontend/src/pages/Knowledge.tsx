@@ -1,5 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
-import { Database, FileText, Search, Trash2, Upload } from "lucide-react";
+import { Database, FileText, FolderOpen, Search, Trash2, Upload } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { api, KnowledgeHit } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
@@ -11,6 +11,8 @@ export function Knowledge() {
   const [hits, setHits] = useState<KnowledgeHit[] | null>(null);
   const [text, setText] = useState({ name: "note.md", content: "" });
   const [uploading, setUploading] = useState(false);
+  const [path, setPath] = useState("");
+  const [ingestingPath, setIngestingPath] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast, notify } = useToast();
 
@@ -47,6 +49,39 @@ export function Knowledge() {
       notify(err instanceof Error ? err.message : String(err), "err");
     } finally {
       setUploading(false);
+    }
+  }
+
+  /**
+   * Index a file or whole directory already on the server's disk.
+   *
+   * Upload handles one file at a time from the browser; this is the path for
+   * a folder of documents that already lives on the machine ORION runs on,
+   * which is the common case for a local-first assistant.
+   */
+  async function addPath(e: FormEvent) {
+    e.preventDefault();
+    if (!path.trim()) return;
+    setIngestingPath(true);
+    try {
+      // A directory returns a batch summary; a single file returns the document.
+      const res = await api.ingestPath(path.trim());
+      if ("results" in res) {
+        const chunks = res.results.reduce((sum, d) => sum + d.chunks, 0);
+        notify(`Indexed ${res.count} document${res.count === 1 ? "" : "s"} into ${chunks} chunks`);
+      } else {
+        notify(
+          res.status === "unchanged"
+            ? `${res.name} is already indexed and unchanged`
+            : `Indexed ${res.name} into ${res.chunks} chunks`,
+        );
+      }
+      setPath("");
+      void reload();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err), "err");
+    } finally {
+      setIngestingPath(false);
     }
   }
 
@@ -96,6 +131,24 @@ export function Knowledge() {
               onChange={(e) => setText({ ...text, content: e.target.value })}
             />
             <button className="primary" disabled={!text.content.trim()}>Index text</button>
+          </form>
+
+          <form className="form" onSubmit={addPath} style={{ marginTop: 16 }}>
+            <label>
+              Or index a path inside the knowledge directory
+              <input
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="notes/         (a file, or a folder to batch-index)"
+              />
+              <small className="muted small">
+                Relative to <code>KNOWLEDGE_DIR</code>. Paths outside it are refused, so a
+                prompt-injected instruction cannot walk the filesystem.
+              </small>
+            </label>
+            <button className="ghost" disabled={!path.trim() || ingestingPath}>
+              <FolderOpen size={14} /> {ingestingPath ? "Indexing…" : "Index path"}
+            </button>
           </form>
         </Panel>
 

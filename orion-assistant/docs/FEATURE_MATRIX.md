@@ -47,6 +47,8 @@
 | Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
 | Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
 | CI | ✅ | Tests, lint, frontend build, image builds |
+| Frontend tests | ✅ | Vitest + Testing Library: palette, shortcuts, UI primitives (37 tests) |
+| Real-model acceptance | ✅ | `scripts/verify-real-model.sh` exercises the live stack against an actual model |
 | Tests | ✅ | 398 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
 
 ## Deliberately out of scope for v1

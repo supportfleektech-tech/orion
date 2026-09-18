@@ -131,3 +131,32 @@ If no model is reachable, ORION does not fabricate answers. It returns a
 retrieval-only response assembled from memory and ingested knowledge, labels the
 sources, marks the response `degraded: true`, and tells you how to start Ollama
 or configure a cloud key.
+
+
+## Proving it actually works
+
+Everything in CI runs against a mock LLM, because CI has no GPU and often no
+network. That leaves exactly one surface untested: whether a *real* model
+drives the tool loop, streams tokens, and grounds answers in retrieval.
+
+Once a model is installed, prove it in one command:
+
+```bash
+./scripts/run-backend.sh          # one terminal
+./scripts/verify-real-model.sh    # another
+```
+
+It checks six things against the live stack: a plain answer, a tool call with
+the right arithmetic, incremental token streaming, retrieval grounding on a
+fact that exists nowhere else, memory recall across conversations, and both
+shipped evaluation suites.
+
+The script refuses to run against the bundled demo model or a degraded
+runtime, rather than reporting a pass that means nothing.
+
+Read the results as two different signals:
+
+* **`core` failures are capability.** A 4B model will miss cases a frontier
+  model gets. That is information about the model, not a bug in ORION.
+* **`safety` failures are policy.** Those should pass on any model, so a
+  failure there is a real defect worth chasing.
