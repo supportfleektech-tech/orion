@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
+import { VoiceProvider } from "./components/VoiceControl";
 import { Topbar } from "./components/Topbar";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
@@ -16,6 +17,7 @@ import { Skills } from "./pages/Skills";
 export default function App() {
   return (
     <BrowserRouter>
+      <VoiceProvider>
       <div className="app-shell">
         <Sidebar />
         <main className="main">
@@ -36,6 +38,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      </VoiceProvider>
     </BrowserRouter>
   );
 }

@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     vision_models: str = "qwen3.5,qwen3-vl,qwen2.5vl,gemma3,llava,minicpm-v,llama3.2-vision,moondream"
     whisper_model: str = "base"
 
+    # ---- voice
+    tts_voice: str = "F1"            # Supertonic preset (F1-F5, M1-M5)
+    tts_language: str = "en"
+    tts_speed: float = 1.05
+    tts_quality_steps: int = 8       # 5 (fast) .. 12 (best)
+    tts_max_chars: int = 2000
+    tts_autoplay: bool = False       # speak assistant replies automatically
+    voice_commands_enabled: bool = True
+    wake_word: str = "orion"
+    require_wake_word: bool = False
+
     # Self-improvement: distil successful runs into reusable skills. Costs one
     # extra local model call per learnable run; set false to turn it off.
     skill_learning_enabled: bool = True
@@ -52,6 +63,11 @@ class Settings(BaseSettings):
 
     max_tool_loops: int = 6
     max_context_chunks: int = 8
+    # Reranking: fetch a wider first-stage net, then re-score it.
+    rerank_enabled: bool = True
+    rerank_candidates: int = 30
+    reranker_backend: str = "lexical"  # lexical | cross-encoder
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     max_history_messages: int = 20
     memory_similarity_min: float = 0.25
     embedding_dim: int = 768

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.models import Chunk, Document
 from app.services.embeddings import cosine, embed_text, keyword_score
+from app.services.reranker import rerank
 
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 180
@@ -128,6 +129,12 @@ async def ingest_path(db: Session, raw_path: str) -> dict:
 
 
 async def search_chunks(db: Session, query: str, limit: int | None = None) -> list[dict]:
+    """Hybrid first-stage retrieval followed by a reranking pass.
+
+    Stage one optimises recall: take a wider candidate set than we need. Stage
+    two reorders it for precision, so the chunk that actually answers the
+    question lands at the top of the context window rather than fourth.
+    """
     limit = limit or settings.max_context_chunks
     rows = db.scalars(select(Chunk).limit(5000)).all()
     if not rows:
@@ -138,7 +145,9 @@ async def search_chunks(db: Session, query: str, limit: int | None = None) -> li
         score = 0.65 * cosine(qvec, chunk.embedding or []) + 0.35 * keyword_score(query, chunk.content)
         scored.append((score, chunk))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [
+
+    pool = max(limit, settings.rerank_candidates) if settings.rerank_enabled else limit
+    candidates = [
         {
             "id": c.id,
             "document_id": c.document_id,
@@ -147,9 +156,10 @@ async def search_chunks(db: Session, query: str, limit: int | None = None) -> li
             "content": c.content,
             "score": round(s, 4),
         }
-        for s, c in scored[:limit]
+        for s, c in scored[:pool]
         if s > 0.02
     ]
+    return rerank(query, candidates, limit=limit)
 
 
 def list_documents(db: Session) -> list[dict]:

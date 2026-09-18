@@ -4,9 +4,10 @@ import json
 import logging
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -24,13 +25,15 @@ from app.api.schemas import (
     SettingsPatch,
     SkillRequest,
     SkillStatusRequest,
+    SpeakRequest,
     ToolRunRequest,
     ToolToggleRequest,
+    VoiceCommandRequest,
 )
 from app.core.config import settings
 from app.core.policy import kill_switch_state, set_kill_switch
 from app.core.security import require_auth
-from app.db.database import get_db
+from app.db.database import get_db, migration_status
 from app.db.models import (
     AgentRun,
     Approval,
@@ -43,9 +46,9 @@ from app.db.models import (
     Message,
     ToolRun,
 )
-from app.services import model_manager
+from app.services import model_manager, voice, voice_commands
 from app.services import skills as skills_service
-from app.services.agent_runtime import audit, execute_tool, run_agent, stream_agent
+from app.services.agent_runtime import PERSONAS, audit, execute_tool, run_agent, stream_agent
 from app.services.ingestion import (
     delete_document,
     ingest_path,
@@ -80,6 +83,7 @@ def health():
         "version": settings.app_version,
         "environment": settings.environment,
         "uptime_seconds": int(time.time() - BOOT_TIME),
+        "schema": migration_status(),
     }
 
 
@@ -300,7 +304,7 @@ def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
 
 @router.patch("/v1/conversations/{conversation_id}", tags=["chat"], dependencies=[Depends(require_auth)])
 def update_conversation(conversation_id: str, patch: ConversationPatch, db: Session = Depends(get_db)):
-    """Rename, pin or archive a conversation."""
+    """Rename, pin, archive, or set the persona of a conversation."""
     conversation = db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(404, "Conversation not found")
@@ -308,6 +312,8 @@ def update_conversation(conversation_id: str, patch: ConversationPatch, db: Sess
     changes = patch.model_dump(exclude_none=True)
     if not changes:
         raise HTTPException(400, "No fields to update")
+    if "persona" in changes and changes["persona"] not in PERSONAS:
+        raise HTTPException(400, f"Unknown persona. Valid options: {', '.join(sorted(PERSONAS))}")
     for key, value in changes.items():
         setattr(conversation, key, value)
     conversation.updated_at = datetime.now(UTC)
@@ -317,6 +323,19 @@ def update_conversation(conversation_id: str, patch: ConversationPatch, db: Sess
         "title": conversation.title,
         "pinned": conversation.pinned,
         "archived": conversation.archived,
+        "persona": conversation.persona,
+        "system_prompt": conversation.system_prompt,
+    }
+
+
+@router.get("/v1/personas", tags=["chat"])
+def list_personas():
+    """Available conversation personas. Personas shape tone, never safety rules."""
+    return {
+        "personas": [
+            {"id": key, "label": value["label"], "description": value["description"]}
+            for key, value in PERSONAS.items()
+        ]
     }
 
 
@@ -840,3 +859,100 @@ async def chat_with_files(
     result = await _run_chat(request, db, attachments=attachments)
     result["attachments"] = [a.to_public() for a in attachments]
     return result
+
+
+# ---------------------------------------------------------------------- voice
+@router.get("/v1/voice/status", tags=["voice"])
+def voice_status_endpoint():
+    """What speech features actually work in this deployment, and why not."""
+    return voice.voice_status()
+
+
+@router.get("/v1/voice/commands", tags=["voice"])
+def voice_commands_catalog():
+    """The phrases the dashboard understands."""
+    return {
+        "enabled": settings.voice_commands_enabled,
+        "wake_word": settings.wake_word,
+        "require_wake_word": settings.require_wake_word,
+        "catalog": voice_commands.command_catalog(),
+        "routes": sorted(voice_commands.ROUTES),
+        "toggles": sorted(voice_commands.TOGGLES),
+    }
+
+
+@router.post("/v1/voice/interpret", tags=["voice"])
+def interpret_voice_command(req: VoiceCommandRequest):
+    """Classify a transcript into a dashboard action.
+
+    Pure function over text: no audio, no model call, safe to call on every
+    interim transcript so the UI can preview what will happen.
+    """
+    if not settings.voice_commands_enabled:
+        return {"action": "chat", "value": req.transcript, "confidence": 0.0,
+                "transcript": req.transcript, "confirm": False, "target": None,
+                "say": None, "params": {"disabled": True}}
+    command = voice_commands.parse(
+        req.transcript,
+        wake_word=settings.wake_word,
+        require_wake_word=(
+            settings.require_wake_word if req.require_wake_word is None else req.require_wake_word
+        ),
+    )
+    return command.to_dict()
+
+
+@router.post("/v1/voice/speak", tags=["voice"])
+async def speak(req: SpeakRequest):
+    """Synthesize speech locally and return WAV audio."""
+    try:
+        audio = await voice.synthesize(req.text, voice=req.voice, speed=req.speed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        # Engine missing or weights unreachable: say so precisely.
+        raise HTTPException(503, str(exc)) from exc
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="speech.wav"'},
+    )
+
+
+@router.post("/v1/voice/transcribe", tags=["voice"])
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str | None = Form(default=None),
+    interpret: bool = Form(default=False),
+):
+    """Transcribe an audio clip locally.
+
+    With `interpret=true` the transcript is also classified as a dashboard
+    command, so the live microphone can drive the UI in a single round trip.
+    """
+    data = await file.read()
+    limit = settings.max_upload_mb * 1024 * 1024
+    if len(data) > limit:
+        raise HTTPException(413, f"Audio exceeds the {settings.max_upload_mb} MB limit")
+    suffix = Path(file.filename or "clip.wav").suffix or ".wav"
+
+    try:
+        result = await voice.transcribe(data, suffix=suffix, language=language)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    payload: dict = {
+        "text": result.text,
+        "language": result.language,
+        "duration_s": result.duration_s,
+        "segments": result.segments,
+    }
+    if interpret and result.text and settings.voice_commands_enabled:
+        payload["command"] = voice_commands.parse(
+            result.text,
+            wake_word=settings.wake_word,
+            require_wake_word=settings.require_wake_word,
+        ).to_dict()
+    return payload

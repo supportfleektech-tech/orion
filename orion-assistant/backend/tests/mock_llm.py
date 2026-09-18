@@ -70,6 +70,10 @@ class MockLLM:
                 turn = mock.script[mock._turn] if mock._turn < len(mock.script) else {"content": "Done."}
                 mock._turn += 1
 
+                if request.get("stream"):
+                    self._send_stream(turn, request)
+                    return
+
                 message: dict[str, Any] = {"role": "assistant", "content": turn.get("content")}
                 if turn.get("tool_calls"):
                     message["tool_calls"] = [
@@ -95,6 +99,64 @@ class MockLLM:
                         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
                     },
                 )
+
+            def _send_stream(self, turn: dict[str, Any], request: dict[str, Any]) -> None:
+                """Emit the turn as SSE deltas, the way a real provider does.
+
+                Prose is split into several chunks and tool-call arguments are
+                deliberately fragmented across deltas, so the router's
+                reassembly logic is genuinely exercised.
+                """
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+
+                base = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.get("model", "mock-model"),
+                }
+
+                def emit(delta: dict[str, Any], finish: str | None = None) -> None:
+                    payload = {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+                    self.wfile.write(f"data: {json.dumps(payload)}\n\n".encode())
+                    self.wfile.flush()
+
+                emit({"role": "assistant"})
+
+                content = turn.get("content")
+                if content:
+                    # Chunk on word boundaries to mimic real token streaming.
+                    words = content.split(" ")
+                    for index, word in enumerate(words):
+                        emit({"content": word if index == 0 else f" {word}"})
+
+                for position, call in enumerate(turn.get("tool_calls") or []):
+                    arguments = json.dumps(call.get("arguments", {}))
+                    emit({
+                        "tool_calls": [{
+                            "index": position,
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {"name": call["name"], "arguments": ""},
+                        }]
+                    })
+                    # Split arguments in half across two deltas.
+                    midpoint = len(arguments) // 2
+                    for fragment in (arguments[:midpoint], arguments[midpoint:]):
+                        emit({
+                            "tool_calls": [{
+                                "index": position,
+                                "function": {"arguments": fragment},
+                            }]
+                        })
+
+                emit({}, finish="tool_calls" if turn.get("tool_calls") else "stop")
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
 
         # Threaded: the OpenAI client uses keep-alive, which would deadlock
         # a single-threaded server waiting for the next request on a held connection.

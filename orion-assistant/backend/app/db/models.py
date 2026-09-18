@@ -35,6 +35,10 @@ class Conversation(Base):
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional persona: a named preset, and/or free-form extra instructions
+    # appended to the global system prompt for this conversation only.
+    persona: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

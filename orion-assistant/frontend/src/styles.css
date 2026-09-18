@@ -362,3 +362,75 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   color: var(--muted); cursor: pointer;
 }
 .attach-btn:hover { color: var(--accent); border-color: #2c3e5e; }
+
+/* Live token caret while an answer is still streaming in. */
+.caret {
+  display: inline-block; width: 7px; height: 14px; margin-left: 2px;
+  vertical-align: text-bottom; background: var(--accent); border-radius: 1px;
+  animation: caret-blink 1s step-end infinite;
+}
+@keyframes caret-blink { 50% { opacity: 0; } }
+
+/* --------------------------------------------------------------- voice UI */
+.voice-dock {
+  position: fixed; right: 22px; bottom: 22px; z-index: 60;
+  display: flex; gap: 8px; align-items: center;
+}
+.voice-btn {
+  width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45); transition: all .18s ease;
+}
+.voice-btn:hover { color: var(--text); border-color: #2c3e5e; }
+.voice-btn.mic.active {
+  background: #7ca7ff; border-color: #7ca7ff; color: #05080f;
+  animation: mic-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 167, 255, .55); }
+  50%      { box-shadow: 0 0 0 11px rgba(124, 167, 255, 0); }
+}
+
+/* Live transcription subtitle, pinned above the mic like a caption track. */
+.subtitle-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 88px; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(820px, calc(100vw - 60px));
+  padding: 11px 15px; border-radius: 11px;
+  background: rgba(7, 10, 15, .93); border: 1px solid var(--line);
+  backdrop-filter: blur(9px); box-shadow: 0 10px 34px rgba(0, 0, 0, .55);
+}
+.subtitle-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--err); flex: none;
+}
+.subtitle-bar.live .subtitle-dot { animation: rec-blink 1.2s ease-in-out infinite; }
+@keyframes rec-blink { 50% { opacity: .25; } }
+.subtitle-text {
+  font-size: 14.5px; line-height: 1.45; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.subtitle-interim-caret {
+  display: inline-block; width: 6px; height: 13px; margin-left: 3px;
+  vertical-align: text-bottom; background: var(--accent);
+  animation: caret-blink 1s step-end infinite;
+}
+.subtitle-close {
+  display: flex; padding: 3px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); flex: none;
+}
+.subtitle-close:hover { color: var(--err); }
+
+.speak-btn {
+  margin-left: 7px; padding: 1px 4px; border: 0; background: none;
+  color: var(--muted); cursor: pointer; vertical-align: middle;
+}
+.speak-btn:hover { color: var(--accent); }
+
+.voice-help { display: grid; gap: 10px; }
+.voice-help-group strong { font-size: 12px; }
+.voice-help-group ul { margin: 5px 0 0; padding-left: 17px; }
+.voice-help-group li { color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+.voice-help-group code {
+  background: #101724; padding: 1px 5px; border-radius: 4px; font-size: 11.5px;
+}

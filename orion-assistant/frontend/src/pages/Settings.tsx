@@ -3,6 +3,7 @@ import { Settings2 } from "lucide-react";
 import { api, AppSettings } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
 import { Badge, ErrorBlock, Loading, PageTitle, Panel, Toast, Toggle } from "../components/ui";
+import { VoicePanel } from "../components/VoicePanel";
 
 const FLAGS: { key: keyof AppSettings; label: string; hint: string }[] = [
   { key: "local_only", label: "Local only", hint: "Never call cloud providers, even for heavy tasks." },
@@ -89,6 +90,8 @@ export function Settings() {
             />
           </label>
         </Panel>
+
+        <VoicePanel />
 
         <Panel subtitle="RUNTIME" title="Environment">
           <div className="kv">

@@ -124,6 +124,48 @@ export interface AttachmentCapabilities {
   formats: Record<string, FormatSupport>;
 }
 
+export interface VoiceBackend {
+  available: boolean;
+  engine: string;
+  error: string | null;
+  voice?: string;
+  voices?: string[];
+  language?: string;
+  speed?: number;
+  model?: string;
+}
+export interface VoiceStatus {
+  tts: VoiceBackend;
+  stt: VoiceBackend;
+  voice_commands_enabled: boolean;
+  wake_word: string;
+}
+export interface VoiceCommand {
+  action: "navigate" | "toggle" | "tool" | "chat" | "ui" | "none";
+  target: string | null;
+  value: unknown;
+  confidence: number;
+  confirm: boolean;
+  transcript: string;
+  say: string | null;
+  params: Record<string, unknown>;
+}
+export interface VoiceCatalog {
+  enabled: boolean;
+  wake_word: string;
+  require_wake_word: boolean;
+  catalog: { category: string; examples: string[] }[];
+  routes: string[];
+  toggles: string[];
+}
+export interface TranscriptResult {
+  text: string;
+  language: string | null;
+  duration_s: number;
+  segments: { start: number; end: number; text: string }[] | null;
+  command?: VoiceCommand;
+}
+
 export interface ChatResponse {
   conversation_id: string;
   run_id: string;
@@ -227,6 +269,8 @@ export interface ChatMessage {
   model?: string | null;
   created_at?: string | null;
   pending?: boolean;
+  /** True while tokens are still arriving for this bubble. */
+  streaming?: boolean;
 }
 export interface ApprovalItem {
   id: string;
@@ -295,7 +339,8 @@ export interface StreamHandlers {
   onToolStart?: (info: { tool: string; arguments: Record<string, unknown> }) => void;
   onToolResult?: (info: { tool: string; result_ok: boolean; error?: string }) => void;
   onStatus?: (info: { stage: string; step?: number }) => void;
-  onMessage?: (content: string) => void;
+  onToken?: (text: string, step: number) => void;
+  onMessage?: (content: string, alreadyStreamed: boolean) => void;
   onDone?: (info: { run_id: string; provider: string; model: string; degraded: boolean; duration_ms: number }) => void;
   onError?: (message: string) => void;
 }
@@ -350,8 +395,11 @@ export async function chatStream(
       case "tool_result":
         handlers.onToolResult?.(payload);
         break;
+      case "token":
+        handlers.onToken?.(payload.text ?? "", payload.step ?? 0);
+        break;
       case "message":
-        handlers.onMessage?.(payload.content ?? "");
+        handlers.onMessage?.(payload.content ?? "", Boolean(payload.already_streamed));
         break;
       case "done":
         handlers.onDone?.(payload);
@@ -478,6 +526,38 @@ export const api = {
       body: form,
     });
   },
+
+  // ---- voice
+  voiceStatus: () => get<VoiceStatus>("/v1/voice/status"),
+  voiceCatalog: () => get<VoiceCatalog>("/v1/voice/commands"),
+  interpretVoice: (transcript: string) =>
+    post<VoiceCommand>("/v1/voice/interpret", { transcript }),
+  transcribe: (blob: Blob, interpret = true) => {
+    const form = new FormData();
+    form.append("file", blob, "clip.webm");
+    form.append("interpret", String(interpret));
+    return request<TranscriptResult>("/v1/voice/transcribe", { method: "POST", body: form });
+  },
+  /** Returns WAV audio, or throws with the backend's reason if TTS is down. */
+  speak: async (text: string, voice?: string): Promise<Blob> => {
+    const response = await fetch(`${API_BASE}/v1/voice/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice }),
+    });
+    if (!response.ok) {
+      let detail = `Speech failed (${response.status})`;
+      try {
+        detail = (await response.json()).detail ?? detail;
+      } catch {
+        /* keep the status-code message */
+      }
+      throw new Error(detail);
+    }
+    return response.blob();
+  },
+
+  personas: () => get<{ personas: { id: string; label: string; description: string }[] }>("/v1/personas"),
 
   settings: () => get<AppSettings>("/v1/settings"),
   updateSettings: (body: Partial<AppSettings>) => patch_<AppSettings>("/v1/settings", body),

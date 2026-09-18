@@ -25,6 +25,8 @@ class ConversationPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     pinned: bool | None = None
     archived: bool | None = None
+    persona: str | None = Field(default=None, max_length=60)
+    system_prompt: str | None = Field(default=None, max_length=8000)
 
 
 class MemoryRequest(BaseModel):
@@ -96,3 +98,14 @@ class FeedbackRequest(BaseModel):
 class ProvisionRequest(BaseModel):
     model: str | None = None
     include_embeddings: bool = True
+
+
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    voice: str | None = None
+    speed: float | None = Field(default=None, ge=0.5, le=2.0)
+
+
+class VoiceCommandRequest(BaseModel):
+    transcript: str = Field(min_length=1, max_length=2000)
+    require_wake_word: bool | None = None

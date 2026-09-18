@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Wrench, X } from "lucide-react";
+import { Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
 import {
   api,
   chatStream,
@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import { Badge, Toast, timeAgo } from "../components/ui";
 import { useToast } from "../hooks/useApi";
+import { useVoiceControl } from "../components/VoiceControl";
 
 export function Chat() {
   const [params, setParams] = useSearchParams();
@@ -30,6 +31,7 @@ export function Chat() {
   const [caps, setCaps] = useState<AttachmentCapabilities | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast, notify } = useToast();
+  const voiceControl = useVoiceControl();
   const endRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = async () => {
@@ -71,6 +73,55 @@ export function Chat() {
 
   useEffect(() => {
     api.attachmentCapabilities().then(setCaps).catch(() => setCaps(null));
+  }, []);
+
+  // Keep a live reference so the voice handler never closes over stale state.
+  const stateRef = useRef({ input: "", busy: false, messages: [] as ChatMessage[] });
+  stateRef.current = { input, busy, messages };
+
+  /** Voice commands that only make sense on this page. */
+  useEffect(
+    () =>
+      voiceControl.registerHandler("chat", (command) => {
+        if (command.action === "chat" && command.value) {
+          void sendText(String(command.value));
+          return true;
+        }
+        if (command.action !== "ui") return false;
+        switch (command.target) {
+          case "set_input":
+            setInput(String(command.value ?? ""));
+            return true;
+          case "send":
+            if (stateRef.current.input.trim()) void sendText(stateRef.current.input.trim());
+            return true;
+          case "new_conversation":
+            setConversationId(undefined);
+            setMessages([]);
+            setLastMeta(null);
+            return true;
+          case "read_last": {
+            const last = [...stateRef.current.messages].reverse().find((m) => m.role === "assistant");
+            if (last) void voiceControl.speak(last.content);
+            else notify("Nothing to read back yet", "err");
+            return true;
+          }
+          default:
+            return false;
+        }
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [voiceControl],
+  );
+
+  // A spoken question from another page arrives as ?say=...
+  useEffect(() => {
+    const queued = params.get("say");
+    if (queued) {
+      setParams({}, { replace: true });
+      void sendText(queued);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Attachments cannot be streamed as multipart, so uploads use the JSON path. */
@@ -124,6 +175,11 @@ export function Chat() {
       await sendWithFiles(text);
       return;
     }
+    await sendText(text);
+  }
+
+  async function sendText(text: string) {
+    if (!text.trim() || stateRef.current.busy) return;
     setMessages((m) => [...m, { role: "user", content: text }]);
     setBusy(true);
     setLiveTools([]);
@@ -150,9 +206,29 @@ export function Chat() {
             prev.map((x, i) => (i === prev.length - 1 && x.tool === t.tool ? { ...x, ok: t.result_ok } : x)),
           );
         },
-        onMessage: (content) => {
+        onToken: (text) => {
+          // First token replaces the thinking indicator with a live bubble.
+          setStage("");
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            if (last?.role === "assistant" && last.streaming) {
+              return [...m.slice(0, -1), { ...last, content: last.content + text }];
+            }
+            return [...m, { role: "assistant", content: text, streaming: true }];
+          });
+        },
+        onMessage: (content, alreadyStreamed) => {
           answered = true;
-          setMessages((m) => [...m, { role: "assistant", content: content || "No response returned." }]);
+          if (voiceControl.autoSpeak && content) void voiceControl.speak(content);
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            if (last?.role === "assistant" && last.streaming) {
+              // Settle the streamed bubble; trust the final text as canonical.
+              return [...m.slice(0, -1), { ...last, content: content || last.content, streaming: false }];
+            }
+            if (alreadyStreamed && content) return m;
+            return [...m, { role: "assistant", content: content || "No response returned." }];
+          });
         },
         onDone: (info) => {
           setLastMeta({
@@ -322,8 +398,20 @@ export function Chat() {
                   <div className="msg-role">
                     {m.role}
                     {m.model ? ` · ${m.model}` : ""}
+                    {m.role === "assistant" && !m.streaming && m.content && voiceControl.ttsAvailable && (
+                      <button
+                        className="speak-btn"
+                        title="Read this aloud"
+                        onClick={() => void voiceControl.speak(m.content)}
+                      >
+                        <Volume2 size={12} />
+                      </button>
+                    )}
                   </div>
-                  <div className="msg-body">{m.content}</div>
+                  <div className="msg-body">
+                    {m.content}
+                    {m.streaming && <span className="caret" aria-hidden="true" />}
+                  </div>
                 </div>
               </div>
             ))

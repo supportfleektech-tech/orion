@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.policy import check_tool
-from app.db.models import AgentRun, Approval, AuditEvent, Message, ToolRun
+from app.db.models import AgentRun, Approval, AuditEvent, Conversation, Message, ToolRun
 from app.services.fallback import extractive_answer
 from app.services.ingestion import search_chunks
 from app.services.memory import retrieve_memories, write_memory
@@ -49,6 +49,65 @@ def _load_system_prompt() -> str:
 
 
 SYSTEM_PROMPT = _load_system_prompt()
+
+# Named personas. These adjust tone and emphasis; they never relax the safety
+# rules in the base prompt, which is always sent first.
+PERSONAS: dict[str, dict[str, str]] = {
+    "default": {
+        "label": "Default",
+        "description": "Balanced, direct, and concise.",
+        "prompt": "",
+    },
+    "engineer": {
+        "label": "Engineer",
+        "description": "Precise and technical; favours code and exact commands.",
+        "prompt": (
+            "Answer as a senior software engineer. Prefer exact commands, file paths and code "
+            "over prose. State assumptions explicitly. When you are unsure whether something "
+            "works, say so rather than guessing, and describe how to verify it."
+        ),
+    },
+    "researcher": {
+        "label": "Researcher",
+        "description": "Thorough; cites sources and separates fact from inference.",
+        "prompt": (
+            "Answer as a careful researcher. Distinguish clearly between what your sources say "
+            "and what you are inferring. Cite the memory or document each claim came from. "
+            "Where evidence is thin or conflicting, say so plainly instead of smoothing it over."
+        ),
+    },
+    "concise": {
+        "label": "Concise",
+        "description": "Shortest correct answer, no preamble.",
+        "prompt": (
+            "Give the shortest correct answer. No preamble, no restating the question, no "
+            "summary at the end. Use a list only when the answer genuinely has several parts."
+        ),
+    },
+    "teacher": {
+        "label": "Teacher",
+        "description": "Explains reasoning step by step for learning.",
+        "prompt": (
+            "Explain as a patient teacher. Build from what the user already appears to know, "
+            "define jargon on first use, and show the reasoning rather than only the result. "
+            "Finish with one short check-for-understanding question."
+        ),
+    },
+}
+
+
+def persona_prompt(conversation: Any) -> str:
+    """Extra system instructions for a conversation, if it has a persona."""
+    if conversation is None:
+        return ""
+    parts = []
+    preset = PERSONAS.get(getattr(conversation, "persona", None) or "")
+    if preset and preset["prompt"]:
+        parts.append(preset["prompt"])
+    custom = (getattr(conversation, "system_prompt", None) or "").strip()
+    if custom:
+        parts.append(custom)
+    return "\n\n".join(parts)
 
 
 def audit(db: Session, event_type: str, summary: str, details: dict | None = None, actor: str = "system") -> None:
@@ -179,8 +238,13 @@ async def run_agent(
     skill_block, skill_ids = skills_context(db, task)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": context},
     ]
+    # Persona comes after the base prompt so it can shape tone but never
+    # override the safety rules above it.
+    persona = persona_prompt(db.get(Conversation, conversation_id) if conversation_id else None)
+    if persona:
+        messages.append({"role": "system", "content": persona})
+    messages.append({"role": "system", "content": context})
     if skill_block:
         messages.append({"role": "system", "content": skill_block})
     messages += [
@@ -337,8 +401,13 @@ async def stream_agent(
     skill_block, skill_ids = skills_context(db, task)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": context},
     ]
+    # Persona comes after the base prompt so it can shape tone but never
+    # override the safety rules above it.
+    persona = persona_prompt(db.get(Conversation, conversation_id) if conversation_id else None)
+    if persona:
+        messages.append({"role": "system", "content": persona})
+    messages.append({"role": "system", "content": context})
     if skill_block:
         messages.append({"role": "system", "content": skill_block})
     messages += [
@@ -353,12 +422,28 @@ async def stream_agent(
     trace: list[dict[str, Any]] = []
     provider, model, final_text = "offline", "degraded", ""
     degraded = False
+    streamed_any = False
     tools = registry.openai_schemas()
 
     try:
         for step in range(settings.max_tool_loops):
             yield _sse("status", {"stage": "reasoning", "step": step})
-            resp = await router.chat(messages, tools=tools, mode=mode, complexity=estimate_complexity(task))
+
+            # Token-level streaming: forward prose to the client as it is
+            # produced. Tool-call deltas are accumulated by the router and only
+            # surface on the terminal "final" event.
+            resp = None
+            streamed_any = False  # per step: only the last step produces the answer
+            async for kind, payload in router.chat_stream(
+                messages, tools=tools, mode=mode, complexity=estimate_complexity(task)
+            ):
+                if kind == "token":
+                    streamed_any = True
+                    yield _sse("token", {"step": step, "text": payload})
+                else:
+                    resp = payload
+            if resp is None:
+                raise RuntimeError("Model stream ended without a final response")
             provider, model, final_text, degraded = resp.provider, resp.model, resp.text, resp.degraded
 
             entry = {
@@ -437,7 +522,10 @@ async def stream_agent(
         except Exception:
             db.rollback()
 
-    yield _sse("message", {"role": "assistant", "content": final_text})
+    yield _sse(
+        "message",
+        {"role": "assistant", "content": final_text, "already_streamed": streamed_any and not degraded},
+    )
     yield _sse(
         "done",
         {

@@ -131,6 +131,46 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_stream(self, message: dict) -> None:
+        """Emit the reply as OpenAI-style SSE deltas.
+
+        Content is chunked word-by-word with a small delay so the UI's token
+        streaming is genuinely exercised rather than arriving in one burst.
+        Tool calls cannot be partially applied, so they go out in a single
+        delta before the content.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+
+        def emit(delta: dict, finish: str | None = None) -> None:
+            payload = {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": "orion-demo",
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+            }
+            self.wfile.write(f"data: {json.dumps(payload)}\n\n".encode())
+            self.wfile.flush()
+
+        emit({"role": "assistant"})
+
+        if message.get("tool_calls"):
+            emit({"tool_calls": message["tool_calls"]})
+        else:
+            for token in re.findall(r"\s*\S+", message.get("content") or ""):
+                emit({"content": token})
+                time.sleep(0.015)
+
+        emit({}, finish="stop")
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
+
     def do_GET(self):
         self._send(200, {"object": "list", "data": [{"id": "orion-demo", "object": "model"}]})
 
@@ -159,6 +199,10 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 }
             ]
+
+        if request.get("stream"):
+            self._send_stream(message)
+            return
 
         self._send(
             200,
