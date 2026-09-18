@@ -1460,3 +1460,38 @@ kbd {
 
 .tool-row { flex-direction: column; align-items: stretch; gap: 8px; }
 .tool-row .row-top { justify-content: flex-start; }
+
+/* ---------------------------------------------------------- shortcut help */
+
+.modal.shortcuts { padding: 22px 24px; }
+
+.shortcuts-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px;
+}
+.shortcuts-head h3 { display: flex; align-items: center; gap: 9px; margin: 0; }
+.shortcuts-head svg { color: var(--accent); }
+
+.shortcut-group { margin-bottom: 16px; }
+.shortcut-group:last-child { margin-bottom: 0; }
+
+.shortcut-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 8px 0; border-bottom: 1px dashed var(--line-soft); font-size: 12.5px;
+  color: var(--text-dim);
+}
+.shortcut-row:last-child { border-bottom: 0; }
+.shortcut-keys { display: flex; gap: 4px; flex: none; }
+
+/* "Jump to latest", shown only when the user has scrolled away from the end. */
+.jump-bottom {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 96px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 13px; border-radius: var(--r-full); font-size: 11.5px;
+  border: 1px solid var(--line-strong); background: rgba(16, 23, 36, 0.95);
+  color: var(--text-dim); backdrop-filter: blur(10px); box-shadow: var(--e-3);
+  transition: color var(--d-fast), border-color var(--d-fast);
+}
+.jump-bottom:hover { color: var(--text); border-color: var(--accent-deep); }
+.chat-shell { position: relative; }

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
+import { ArrowDown, Archive, Bot, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
 import {
   api,
   chatStream,
@@ -55,6 +55,9 @@ export function Chat() {
   const { toast, notify } = useToast();
   const voiceControl = useVoiceControl();
   const endRef = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [personas, setPersonas] = useState<{ id: string; label: string; description: string }[]>([]);
+  const [persona, setPersona] = useState("default");
 
   const loadConversations = async () => {
     try {
@@ -79,9 +82,23 @@ export function Chat() {
       .catch(() => setMessages([]));
   }, [conversationId]);
 
+  /**
+   * Follow the conversation, but only while the user is already at the bottom.
+   *
+   * Auto-scrolling unconditionally yanks the view away from someone reading
+   * back through history -- especially bad here, where tokens stream in and
+   * would re-trigger it on every frame. When they have scrolled up we stop
+   * following and offer an explicit jump button instead.
+   */
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
+    if (atBottom) endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy, atBottom]);
+
+  function onMessagesScroll(event: React.UIEvent<HTMLDivElement>) {
+    const el = event.currentTarget;
+    // 80px of slack, so "near enough" still counts as following.
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  }
 
   useEffect(() => {
     const q = params.get("q");
@@ -95,7 +112,33 @@ export function Chat() {
 
   useEffect(() => {
     api.attachmentCapabilities().then(setCaps).catch(() => setCaps(null));
+    api.personas().then((r) => setPersonas(r.personas)).catch(() => setPersonas([]));
   }, []);
+
+  /**
+   * Persist the persona on the conversation.
+   *
+   * Personas live on the conversation rather than in component state so the
+   * choice survives a reload and applies to every later turn. A brand new
+   * conversation has no id yet, so we hold the value and let the first send
+   * create the row; the effect below writes it once the id exists.
+   */
+  async function choosePersona(next: string) {
+    setPersona(next);
+    if (!conversationId) return;
+    try {
+      await api.updateConversation(conversationId, { persona: next });
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err), "err");
+    }
+  }
+
+  // The first send creates the conversation; apply a non-default persona then.
+  useEffect(() => {
+    if (!conversationId || persona === "default") return;
+    api.updateConversation(conversationId, { persona }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   // Keep a live reference so the voice handler never closes over stale state.
   const stateRef = useRef({ input: "", busy: false, messages: [] as ChatMessage[] });
@@ -392,6 +435,17 @@ export function Chat() {
             <h2>ORION</h2>
           </div>
           <div className="chat-head-right">
+            {personas.length > 0 && (
+              <select
+                value={persona}
+                onChange={(e) => void choosePersona(e.target.value)}
+                title={personas.find((p) => p.id === persona)?.description ?? "Conversation persona"}
+              >
+                {personas.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+            )}
             <select value={mode} onChange={(e) => setMode(e.target.value)} title="Routing mode">
               <option value="auto">Auto routing</option>
               <option value="local">Local only</option>
@@ -405,7 +459,7 @@ export function Chat() {
           </div>
         </div>
 
-        <div className="messages">
+        <div className="messages" onScroll={onMessagesScroll}>
           {messages.length === 0 && !busy ? (
             <motion.div
               className="empty-chat"
@@ -509,6 +563,24 @@ export function Chat() {
           </AnimatePresence>
           <div ref={endRef} />
         </div>
+
+        <AnimatePresence>
+          {!atBottom && (
+            <motion.button
+              className="jump-bottom"
+              onClick={() => {
+                setAtBottom(true);
+                endRef.current?.scrollIntoView({ behavior: "smooth" });
+              }}
+              initial={{ opacity: 0, y: 8, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.9 }}
+              transition={spring}
+            >
+              <ArrowDown size={14} /> Jump to latest
+            </motion.button>
+          )}
+        </AnimatePresence>
 
         {lastMeta && (lastMeta.memories.length > 0 || lastMeta.knowledge.length > 0 || usedTools.length > 0) && (
           <div className="context-strip">

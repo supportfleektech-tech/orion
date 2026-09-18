@@ -100,6 +100,14 @@ model, audio is transcribed locally with faster-whisper. Anything ORION cannot r
 honestly rather than silently ignored — `GET /v1/attachments/capabilities` tells you exactly what
 the current deployment supports.
 
+### A control plane that responds
+
+Thirteen pages sharing one tokenised design system. `Ctrl/Cmd+K` opens a
+command palette that searches every page and action and falls through to chat
+when nothing matches; `?` lists every shortcut. Routes crossfade, lists
+stagger, metrics count up, and the mic ring tracks your actual voice level.
+All of it collapses to near-zero when the OS asks for reduced motion.
+
 ### Speak to it, and let it speak back
 
 Press the microphone (or Ctrl/Cmd+Shift+V) and talk. Speech is transcribed
@@ -203,7 +211,7 @@ POST   /v1/voice/transcribe
 ./scripts/run-tests.sh
 ```
 
-* 373 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+* 383 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess

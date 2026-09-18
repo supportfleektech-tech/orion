@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Sidebar } from "./components/Sidebar";
 import { VoiceProvider } from "./components/VoiceControl";
 import { CommandPalette } from "./components/CommandPalette";
+import { Shortcuts } from "./components/Shortcuts";
 import { Topbar } from "./components/Topbar";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
@@ -71,6 +72,7 @@ export default function App() {
           </main>
         </div>
         <CommandPalette />
+        <Shortcuts />
       </VoiceProvider>
     </BrowserRouter>
   );

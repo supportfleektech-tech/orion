@@ -546,7 +546,10 @@ export const api = {
   conversations: () => get<{ conversations: ConversationSummary[] }>("/v1/conversations"),
   conversation: (id: string) => get<{ id: string; title: string; messages: ChatMessage[] }>(`/v1/conversations/${id}`),
   deleteConversation: (id: string) => del<{ deleted: boolean }>(`/v1/conversations/${id}`),
-  updateConversation: (id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) =>
+  updateConversation: (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean; persona?: string; system_prompt?: string },
+  ) =>
     patch_<ConversationSummary>(`/v1/conversations/${id}`, patch),
 
   memories: (kind?: string) => get<{ memories: MemoryItem[] }>(`/v1/memory${kind ? `?kind=${kind}` : ""}`),
