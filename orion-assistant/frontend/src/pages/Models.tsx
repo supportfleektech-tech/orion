@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Cpu, Download, HardDrive, RefreshCw } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api, type ModelStatus, type ModelTier, type ProvisionResult } from "../lib/api";
-import { Badge, ErrorBlock, Loading, PageTitle, Panel, Toast } from "../components/ui";
+import { Badge, ErrorBlock, Loading, PageTitle, Panel, Toast, Row } from "../components/ui";
 import { useToast } from "../hooks/useApi";
 
 export function Models() {
@@ -146,23 +147,25 @@ export function Models() {
 
       {pulls.length > 0 && (
         <Panel title="Downloads" subtitle="IN PROGRESS">
-          {pulls.map((pull) => (
-            <div key={pull.model} className="list-row">
-              <div style={{ flex: 1 }}>
-                <div className="row-top">
-                  <strong>{pull.model}</strong>
-                  <Badge tone={pull.status === "ready" ? "ok" : pull.status === "failed" ? "err" : "info"}>
-                    {pull.status}
-                  </Badge>
-                  <span className="muted small">{pull.percent}%</span>
+          <AnimatePresence mode="popLayout">
+            {pulls.map((pull, idx) => (
+              <Row key={pull.model} index={idx}>
+                <div style={{ flex: 1 }}>
+                  <div className="row-top">
+                    <strong>{pull.model}</strong>
+                    <Badge tone={pull.status === "ready" ? "ok" : pull.status === "failed" ? "err" : "info"}>
+                      {pull.status}
+                    </Badge>
+                    <span className="muted small">{pull.percent}%</span>
+                  </div>
+                  <div className="progress">
+                    <div className="progress-fill" style={{ width: `${Math.min(100, pull.percent)}%` }} />
+                  </div>
+                  <span className="muted small">{pull.error ?? pull.detail}</span>
                 </div>
-                <div className="progress">
-                  <div className="progress-fill" style={{ width: `${Math.min(100, pull.percent)}%` }} />
-                </div>
-                <span className="muted small">{pull.error ?? pull.detail}</span>
-              </div>
-            </div>
-          ))}
+              </Row>
+            ))}
+          </AnimatePresence>
         </Panel>
       )}
 

@@ -82,3 +82,24 @@ def test_reduced_motion_is_honoured():
     tokens = (STYLE_DIR / "tokens.css").read_text()
     assert "prefers-reduced-motion" in tokens
     assert "animation-duration: 1ms !important" in tokens
+
+
+def test_router_is_past_the_known_advisories():
+    """react-router 6.x carries two moderate CVEs (open redirect via backslash
+    in <Link>, and constructor injection in deserializeErrors). Pin the major
+    so a careless `npm install` cannot walk back into them."""
+    import json
+
+    pkg = json.loads((FRONTEND.parent / "package.json").read_text())
+    spec = pkg["dependencies"]["react-router-dom"]
+    major = int(spec.lstrip("^~>=< ").split(".")[0])
+    assert major >= 7, f"react-router-dom {spec} is affected by GHSA-wrjc-x8rr-h8h6"
+
+
+def test_motion_library_is_declared():
+    """The UI imports framer-motion everywhere; an undeclared dependency would
+    build locally from a transitive copy and fail in a clean install."""
+    import json
+
+    pkg = json.loads((FRONTEND.parent / "package.json").read_text())
+    assert "framer-motion" in pkg["dependencies"]

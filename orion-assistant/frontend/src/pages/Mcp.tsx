@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plug, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { api, type McpServerInfo, type McpServerInput } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
 import {
@@ -213,9 +214,11 @@ export function Mcp() {
         />
       )}
 
-      {data?.servers.map((server) => (
+      {data?.servers.map((server, idx) => (
         <Panel
           key={server.id}
+          delay={Math.min(idx, 6) * 0.05}
+          interactive
           subtitle={server.transport.toUpperCase()}
           title={server.name}
           right={
@@ -262,18 +265,32 @@ export function Mcp() {
                 <Wrench size={13} />
                 {expanded === server.id ? "Hide" : "Show"} {server.tools.length} tools
               </button>
-              {expanded === server.id && (
-                <ul className="mcp-tools">
-                  {server.tools.map((tool) => (
-                    <li key={tool.name}>
-                      <code>
-                        {server.name}.{tool.name}
-                      </code>
-                      <span className="muted">{tool.description || "No description provided"}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <AnimatePresence initial={false}>
+                {expanded === server.id && (
+                  <motion.ul
+                    className="mcp-tools"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    {server.tools.map((tool, i) => (
+                      <motion.li
+                        key={tool.name}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: Math.min(i, 10) * 0.03 }}
+                      >
+                        <code>
+                          {server.name}.{tool.name}
+                        </code>
+                        <span className="muted">{tool.description || "No description provided"}</span>
+                      </motion.li>
+                    ))}
+                  </motion.ul>
+                )}
+              </AnimatePresence>
             </>
           )}
 

@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { GraduationCap, Sparkles, Trash2 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api, type FeedbackStats, type SkillItem } from "../lib/api";
-import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo } from "../components/ui";
+import { Badge, EmptyBlock, ErrorBlock, Loading, PageTitle, Panel, Toast, timeAgo, Row } from "../components/ui";
 import { useToast } from "../hooks/useApi";
 
 const BLANK = { name: "", description: "", instructions: "", trigger_keywords: "" };
@@ -106,12 +107,14 @@ export function Skills() {
               <p className="muted small">No learned skill matches this request yet.</p>
             ) : (
               <div className="list">
-                {matches.map((m) => (
-                  <div key={m.id} className="list-row">
-                    <strong>{m.name}</strong>
-                    <Badge tone="info">relevance {m.relevance?.toFixed(2)}</Badge>
-                  </div>
-                ))}
+                <AnimatePresence mode="popLayout">
+                  {matches.map((m, idx) => (
+                    <Row key={m.id} index={idx}>
+                      <strong>{m.name}</strong>
+                      <Badge tone="info">relevance {m.relevance?.toFixed(2)}</Badge>
+                    </Row>
+                  ))}
+                </AnimatePresence>
               </div>
             ))}
         </Panel>
@@ -180,42 +183,44 @@ export function Skills() {
           />
         ) : (
           <div className="list">
-            {skills.map((skill) => (
-              <div key={skill.id} className="list-row skill-row">
-                <div style={{ flex: 1 }}>
-                  <div className="row-top">
-                    <strong>{skill.name}</strong>
-                    <Badge tone={skill.status === "active" ? "ok" : skill.status === "disabled" ? "err" : "info"}>
-                      {skill.status}
-                    </Badge>
-                    <Badge>{skill.source}</Badge>
-                    <span className="muted small">confidence {Math.round(skill.confidence * 100)}%</span>
+            <AnimatePresence mode="popLayout">
+              {skills.map((skill, idx) => (
+                <Row key={skill.id} index={idx} className="skill-row">
+                  <div style={{ flex: 1 }}>
+                    <div className="row-top">
+                      <strong>{skill.name}</strong>
+                      <Badge tone={skill.status === "active" ? "ok" : skill.status === "disabled" ? "err" : "info"}>
+                        {skill.status}
+                      </Badge>
+                      <Badge>{skill.source}</Badge>
+                      <span className="muted small">confidence {Math.round(skill.confidence * 100)}%</span>
+                    </div>
+                    <p className="muted small">{skill.description}</p>
+                    <pre className="trace">{skill.instructions}</pre>
+                    <span className="muted small">
+                      used {skill.uses}× · {skill.successes} ok / {skill.failures} failed
+                      {skill.last_used_at && ` · last ${timeAgo(skill.last_used_at)}`}
+                      {skill.trigger_keywords.length > 0 && ` · ${skill.trigger_keywords.join(", ")}`}
+                    </span>
                   </div>
-                  <p className="muted small">{skill.description}</p>
-                  <pre className="trace">{skill.instructions}</pre>
-                  <span className="muted small">
-                    used {skill.uses}× · {skill.successes} ok / {skill.failures} failed
-                    {skill.last_used_at && ` · last ${timeAgo(skill.last_used_at)}`}
-                    {skill.trigger_keywords.length > 0 && ` · ${skill.trigger_keywords.join(", ")}`}
-                  </span>
-                </div>
-                <div className="row-actions">
-                  <button
-                    className="ghost"
-                    onClick={() =>
-                      void api
-                        .setSkillStatus(skill.id, skill.status === "disabled" ? "active" : "disabled")
-                        .then(load)
-                    }
-                  >
-                    {skill.status === "disabled" ? "Enable" : "Disable"}
-                  </button>
-                  <button className="ghost" onClick={() => void api.deleteSkill(skill.id).then(load)}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+                  <div className="row-actions">
+                    <button
+                      className="ghost"
+                      onClick={() =>
+                        void api
+                          .setSkillStatus(skill.id, skill.status === "disabled" ? "active" : "disabled")
+                          .then(load)
+                      }
+                    >
+                      {skill.status === "disabled" ? "Enable" : "Disable"}
+                    </button>
+                    <button className="ghost" onClick={() => void api.deleteSkill(skill.id).then(load)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </Row>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </Panel>

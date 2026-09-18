@@ -250,7 +250,15 @@ export interface Metrics {
   agent_success_rate: number;
   avg_run_ms: number;
   tool_success_rate: number;
-  router: Record<string, number | string | null>;
+  router: {
+    calls: number;
+    local_calls: number;
+    cloud_calls: number;
+    failures: number;
+    degraded_calls: number;
+    total_latency_ms: number;
+    last_error: string | null;
+  };
   timeline: { id: string; task: string; state: string; provider: string; model: string; duration_ms: number; created_at: string }[];
 }
 export interface ConversationSummary {

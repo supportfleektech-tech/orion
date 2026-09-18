@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Play, TerminalSquare } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { api, Tool } from "../lib/api";
 import { useAsync, useToast } from "../hooks/useApi";
-import { Badge, ErrorBlock, Loading, PageTitle, Panel, Toast, Toggle, riskTone, timeAgo } from "../components/ui";
+import { Badge, ErrorBlock, Loading, PageTitle, Panel, Toast, Toggle, riskTone, timeAgo, Row } from "../components/ui";
 
 export function Tools() {
   const { data, error, loading, reload } = useAsync(() => api.tools(), []);
@@ -48,8 +49,8 @@ export function Tools() {
               <div className="list">
                 {tools
                   .filter((t) => t.category === cat)
-                  .map((t) => (
-                    <div className={`list-row tool-row ${selected?.name === t.name ? "active" : ""}`} key={t.name}>
+                  .map((t, ti) => (
+                    <Row key={t.name} index={ti} className={`tool-row ${selected?.name === t.name ? "active" : ""}`}>
                       <button
                         className="tool-main"
                         onClick={() => {
@@ -78,7 +79,7 @@ export function Tools() {
                           void reload();
                         }}
                       />
-                    </div>
+                    </Row>
                   ))}
               </div>
             </Panel>
@@ -103,18 +104,20 @@ export function Tools() {
 
           <Panel subtitle="HISTORY" title="Recent executions">
             <div className="list">
-              {(runs?.runs ?? []).slice(0, 12).map((r) => (
-                <div className="list-row" key={r.id}>
-                  <div>
-                    <div className="row-top">
-                      <strong>{r.tool_name}</strong>
-                      <Badge tone={r.status === "succeeded" ? "ok" : "err"}>{r.status}</Badge>
-                      <span className="muted small">{r.duration_ms}ms · {timeAgo(r.created_at)}</span>
+              <AnimatePresence mode="popLayout">
+                {(runs?.runs ?? []).slice(0, 12).map((r, idx) => (
+                  <Row key={r.id} index={idx}>
+                    <div>
+                      <div className="row-top">
+                        <strong>{r.tool_name}</strong>
+                        <Badge tone={r.status === "succeeded" ? "ok" : "err"}>{r.status}</Badge>
+                        <span className="muted small">{r.duration_ms}ms · {timeAgo(r.created_at)}</span>
+                      </div>
+                      {r.error && <p className="muted small">{r.error}</p>}
                     </div>
-                    {r.error && <p className="muted small">{r.error}</p>}
-                  </div>
-                </div>
-              ))}
+                  </Row>
+                ))}
+              </AnimatePresence>
               {(runs?.runs ?? []).length === 0 && <p className="muted small">No executions yet.</p>}
             </div>
           </Panel>
