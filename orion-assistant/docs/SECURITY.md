@@ -79,6 +79,18 @@ short-circuits on the first differing byte, leaking the shared prefix length
 through response timing, which is enough to recover a token byte by byte. An
 unset `ADMIN_TOKEN` also never authorises an empty bearer header.
 
+### The local-only guarantee
+
+`LOCAL_ONLY=true` (or the Settings toggle) means no request leaves the machine,
+and it is enforced at the routing layer rather than the UI: an explicit
+`mode: "cloud"` on a chat request cannot override it, and a failing local model
+degrades to retrieval-only rather than falling through to a cloud provider.
+
+This is the failure mode worth guarding, because it is silent — a leak
+produces a perfectly normal answer and no error. Two tests in
+`test_model_routing.py` cover it, one on the planned attempts and one
+asserting the cloud client is never called at all.
+
 ### Before exposing ORION to a network
 
 The defaults assume a single user on their own machine:
