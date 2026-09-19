@@ -665,6 +665,13 @@ export const api = {
   feedbackStats: () => get<FeedbackStats>("/v1/feedback/stats"),
 
   // ---- attachments
+  /** Show how a file will be read before it is sent. */
+  inspectAttachment: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ProcessedAttachment>("/v1/attachments/inspect", { method: "POST", body: form });
+  },
+
   attachmentCapabilities: () => get<AttachmentCapabilities>("/v1/attachments/capabilities"),
   chatWithFiles: (body: {
     message: string;

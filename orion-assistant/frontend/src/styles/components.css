@@ -1408,6 +1408,18 @@ kbd {
   font-size: 11px; padding: 5px 7px 5px 10px; border-radius: var(--r-full);
   border: 1px solid var(--line-strong); background: rgba(16, 23, 36, 0.8); color: var(--text-dim);
 }
+.attachment-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* How the file will actually be read -- shown before anything is sent. */
+.attachment-hint {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-style: normal; font-size: 10px; color: var(--muted-deep);
+  padding-left: 7px; border-left: 1px solid var(--line-strong);
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attachment-hint.warn { color: var(--warn); }
+.attachment-hint svg { flex: none; }
+
 .attachment-chip button {
   border: 0; background: none; color: var(--muted-deep); display: grid; place-items: center;
   padding: 1px; border-radius: 50%; transition: color var(--d-fast);

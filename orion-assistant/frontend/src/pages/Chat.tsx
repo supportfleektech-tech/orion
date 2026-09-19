@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowDown, Archive, Bot, ThumbsDown, ThumbsUp, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, Archive, Bot, ThumbsDown, ThumbsUp, Loader2, MessageSquarePlus, Paperclip, Pencil, Pin, PinOff, Send, Trash2, UserRound, Volume2, Wrench, X } from "lucide-react";
 import {
   api,
   chatStream,
@@ -24,6 +24,35 @@ import { useVoiceControl } from "../components/VoiceControl";
  * A spinner says "busy"; this says "thinking", which is closer to the truth
  * during a multi-step tool loop.
  */
+/**
+ * How a staged file will be read.
+ *
+ * `note` is the backend's own explanation when something cannot be handled
+ * (no vision model, unreadable binary), so it is shown verbatim rather than
+ * reworded into something vaguer.
+ */
+function AttachmentHint({ state }: { state?: ProcessedAttachment | "pending" | "failed" }) {
+  if (!state) return null;
+  if (state === "pending") return <em className="attachment-hint">reading…</em>;
+  if (state === "failed") return null;
+
+  const problem = Boolean(state.note);
+  const label = state.note
+    ? state.note
+    : state.handled_as === "image"
+      ? "sent as an image"
+      : state.handled_as === "transcribed"
+        ? "transcribed"
+        : `read as text · ${Number(state.meta?.characters ?? 0).toLocaleString()} chars`;
+
+  return (
+    <em className={`attachment-hint ${problem ? "warn" : ""}`} title={label}>
+      {problem && <AlertTriangle size={10} />}
+      {label}
+    </em>
+  );
+}
+
 function ThinkingDots() {
   return (
     <span className="thinking-dots" aria-hidden="true">
@@ -57,6 +86,8 @@ export function Chat() {
   const endRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [rated, setRated] = useState<Record<string, "up" | "down">>({});
+  /** How each staged file will actually be read, keyed by name+size. */
+  const [inspected, setInspected] = useState<Record<string, ProcessedAttachment | "pending" | "failed">>({});
   const [personas, setPersonas] = useState<{ id: string; label: string; description: string }[]>([]);
   const [persona, setPersona] = useState("default");
 
@@ -131,6 +162,28 @@ export function Chat() {
    * and moves their confidence, so this is what makes the assistant improve
    * from correction rather than only from whether a run crashed.
    */
+  const fileKey = (file: File) => `${file.name}:${file.size}`;
+
+  /**
+   * Ask the backend how a file will be read, before anything is sent.
+   *
+   * Attaching a scanned PDF to a text-only model is the classic silent
+   * failure: it looks attached, and the answer quietly ignores it. Showing
+   * "read as text" vs "no vision model" up front turns that into something
+   * the user can act on.
+   */
+  async function inspect(file: File) {
+    const key = fileKey(file);
+    setInspected((prev) => ({ ...prev, [key]: "pending" }));
+    try {
+      const result = await api.inspectAttachment(file);
+      setInspected((prev) => ({ ...prev, [key]: result }));
+    } catch {
+      // Inspection is advisory; a failure must not block sending the file.
+      setInspected((prev) => ({ ...prev, [key]: "failed" }));
+    }
+  }
+
   async function rate(runId: string, rating: "up" | "down") {
     setRated((r) => ({ ...r, [runId]: rating }));
     try {
@@ -658,7 +711,8 @@ export function Chat() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={spring}
               >
-                {file.name}
+                <span className="attachment-name">{file.name}</span>
+                <AttachmentHint state={inspected[fileKey(file)]} />
                 <button
                   type="button"
                   aria-label={`Remove ${file.name}`}
@@ -685,7 +739,9 @@ export function Chat() {
               if (tooBig.length > 0) {
                 notify(`${tooBig[0].name} is larger than ${caps?.max_upload_mb ?? 25} MB`, "err");
               }
-              setFiles((f) => [...f, ...picked.filter((p) => p.size <= limit)]);
+              const accepted = picked.filter((p) => p.size <= limit);
+              setFiles((f) => [...f, ...accepted]);
+              accepted.forEach((file) => void inspect(file));
               e.target.value = "";
             }}
           />
