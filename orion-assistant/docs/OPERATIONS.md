@@ -100,3 +100,24 @@ longer than 30s is a genuine deadlock and should surface rather than hang.
 
 Point `DATABASE_URL` at Postgres and none of this applies — it handles
 concurrent writers itself.
+
+
+## Upgrading an existing install
+
+`init_db()` runs on every boot and handles three cases:
+
+| Database state | What happens |
+|---|---|
+| Brand new | Tables created, stamped at head |
+| Pre-Alembic (no `alembic_version`) | Stamped at baseline, then migrated to head |
+| Versioned | Migrated to head |
+
+A failed migration is logged and boot continues, so a schema problem degrades
+the app rather than preventing it from starting at all. Check
+`GET /health` — it reports `schema.current_revision`, `schema.head_revision`
+and `schema.up_to_date`.
+
+Upgrades are covered by tests that seed a baseline database with real rows,
+migrate it, and then boot the app against the result in a fresh process to
+confirm the pre-existing data is still readable and writable through the API.
+Back up `orion.db` before a major upgrade anyway — it is a single file.
