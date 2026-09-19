@@ -29,8 +29,18 @@ if settings.is_sqlite:
     @event.listens_for(engine, "connect")
     def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - driver hook
         cur = dbapi_conn.cursor()
+        # WAL lets readers run while a write is in flight.
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
+        # SQLite still serialises writers. The default 5s meant a write could
+        # fail outright while a long agent run held its transaction -- losing
+        # a user's message to a transient lock. 30s is long enough to outlast
+        # any commit here and still surface a genuine deadlock rather than
+        # hanging forever.
+        cur.execute("PRAGMA busy_timeout=30000")
+        # Durable enough for a local assistant, and markedly faster than the
+        # default FULL sync on every commit.
+        cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
 

@@ -137,3 +137,72 @@ def test_listing_documents_is_a_constant_number_of_queries(client, db, count_que
     client.get("/v1/knowledge/documents")
 
     assert count_queries["n"] <= 3, f"{count_queries['n']} queries to list documents"
+
+
+# ------------------------------------------------------- SQLite durability
+def test_sqlite_is_configured_to_wait_out_a_write_lock():
+    """SQLite serialises writers, and the driver default is to give up after
+    5 seconds. An agent run holding its transaction longer than that would
+    make a concurrent write fail outright -- losing a user's message to a
+    transient lock rather than queueing behind it.
+    """
+    from app.core.config import settings
+    from app.db.database import engine
+
+    if not settings.is_sqlite:
+        pytest.skip("Postgres handles concurrent writers itself")
+
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("PRAGMA busy_timeout").scalar() >= 30_000
+        # WAL lets reads continue while a write is in flight.
+        assert conn.exec_driver_sql("PRAGMA journal_mode").scalar().lower() == "wal"
+        # Foreign keys are off by default in SQLite; cascades depend on them.
+        assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+
+
+def test_a_writer_waits_for_a_held_lock_instead_of_failing(tmp_path):
+    """The behavioural half of the check above, against a real lock."""
+    import sqlite3
+    import threading
+    import time
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy import event as sa_event
+
+    path = tmp_path / "locked.db"
+    engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+
+    @sa_event.listens_for(engine, "connect")
+    def _pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.close()
+
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)"))
+
+    holder = sqlite3.connect(str(path), timeout=60)
+    holder.execute("PRAGMA journal_mode=WAL")
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("INSERT INTO t (v) VALUES ('held')")
+
+    outcome: dict[str, object] = {}
+
+    def writer():
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("INSERT INTO t (v) VALUES ('waited')"))
+            outcome["ok"] = True
+        except Exception as exc:  # pragma: no cover - the bug this guards
+            outcome["error"] = type(exc).__name__
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    # Hold past the 5s driver default that used to fail.
+    time.sleep(6)
+    holder.commit()
+    holder.close()
+    thread.join(timeout=30)
+
+    assert outcome.get("ok") is True, f"writer gave up instead of waiting: {outcome}"
