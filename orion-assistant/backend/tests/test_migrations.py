@@ -223,3 +223,166 @@ def test_the_docker_image_ships_what_the_app_needs_at_runtime():
     compose = (root / "docker-compose.yml").read_text()
     assert "dockerfile: backend/Dockerfile" in compose
     assert "context: ." in compose
+
+
+# =====================================================================
+# Upgrading a database that already has data in it
+#
+# Every existing install takes this path. A migration that drops rows, or
+# leaves the app unable to read what survived, is the one bug in this file
+# that destroys something the user cannot get back.
+# =====================================================================
+
+import sqlite3  # noqa: E402
+import uuid  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+
+def _seed_baseline(path: str) -> dict[str, int]:
+    """Insert representative rows into a database at the baseline revision."""
+    now = datetime.utcnow().isoformat(" ")
+    conn = sqlite3.connect(path)
+
+    conversation = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO conversations (id,title,pinned,archived,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (conversation, "Deploy planning", 1, 0, now, now),
+    )
+    for role, text in [("user", "how do I deploy?"), ("assistant", "Use the runbook.")]:
+        conn.execute(
+            "INSERT INTO messages (conversation_id,role,content,tokens,latency_ms,meta,created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (conversation, role, text, 0, 0, "{}", now),
+        )
+    conn.execute(
+        "INSERT INTO memories (id,kind,content,source,confidence,pinned,meta,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), "fact", "The deploy key lives in the vault.", "manual", 0.8, 1, "{}", now, now),
+    )
+    document = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO documents (id,name,path,hash,size_bytes,chunk_count,meta,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (document, "runbook.md", "/kb/runbook.md", "h1", 120, 1, "{}", now),
+    )
+    conn.execute(
+        "INSERT INTO chunks (id,document_id,chunk_index,content,meta,created_at) VALUES (?,?,?,?,?,?)",
+        (str(uuid.uuid4()), document, 0, "Roll back with the previous image tag.", "{}", now),
+    )
+    conn.commit()
+
+    tables = ["conversations", "messages", "memories", "documents", "chunks"]
+    counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+    conn.close()
+    return counts
+
+
+def test_upgrading_a_populated_database_keeps_every_row(tmp_path, db_url):
+    """The path every existing install takes on update."""
+    assert alembic("upgrade", BASELINE, db_url=db_url).returncode == 0
+    path = db_url.replace("sqlite:///", "")
+
+    before = _seed_baseline(path)
+    assert alembic("upgrade", "head", db_url=db_url).returncode == 0
+
+    conn = sqlite3.connect(path)
+    after = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in before}
+    conn.close()
+
+    assert after == before, f"rows lost during upgrade: {before} -> {after}"
+
+
+def test_upgrading_preserves_the_content_not_just_the_row_count(tmp_path, db_url):
+    """A migration that rewrites a table could keep the count and lose the
+    values, which a COUNT(*) check would miss entirely."""
+    assert alembic("upgrade", BASELINE, db_url=db_url).returncode == 0
+    path = db_url.replace("sqlite:///", "")
+    _seed_baseline(path)
+
+    assert alembic("upgrade", "head", db_url=db_url).returncode == 0
+
+    conn = sqlite3.connect(path)
+    assert conn.execute("SELECT title FROM conversations").fetchone()[0] == "Deploy planning"
+    assert conn.execute("SELECT pinned FROM conversations").fetchone()[0] == 1
+    assert "previous image tag" in conn.execute("SELECT content FROM chunks").fetchone()[0]
+    assert conn.execute("SELECT COUNT(*) FROM messages WHERE role='assistant'").fetchone()[0] == 1
+    conn.close()
+
+
+def test_columns_added_later_are_usable_on_pre_existing_rows(tmp_path, db_url):
+    """An added column defaults to NULL on old rows; the app has to cope with
+    that rather than only working for data created after the upgrade."""
+    assert alembic("upgrade", BASELINE, db_url=db_url).returncode == 0
+    path = db_url.replace("sqlite:///", "")
+    _seed_baseline(path)
+    assert alembic("upgrade", "head", db_url=db_url).returncode == 0
+
+    conn = sqlite3.connect(path)
+    columns = [c[1] for c in conn.execute("PRAGMA table_info(conversations)")]
+    assert "persona" in columns and "system_prompt" in columns
+
+    # The old row can be updated through the new column.
+    conn.execute("UPDATE conversations SET persona='engineer'")
+    conn.commit()
+    assert conn.execute("SELECT persona FROM conversations").fetchone()[0] == "engineer"
+    conn.close()
+
+
+def test_the_app_serves_a_database_that_was_upgraded_from_baseline(tmp_path):
+    """The end-to-end version: migrate a populated old database, then boot the
+    real app against it in a fresh interpreter and read the pre-existing data
+    back through the API. Run out-of-process because the app binds its engine
+    at import time, and monkeypatching that in-process proves nothing about
+    what happens on a real boot.
+    """
+    path = tmp_path / "upgraded.db"
+    url = f"sqlite:///{path}"
+
+    assert alembic("upgrade", BASELINE, db_url=url).returncode == 0
+    _seed_baseline(str(path))
+    assert alembic("upgrade", "head", db_url=url).returncode == 0
+
+    probe = """
+from fastapi.testclient import TestClient
+from app.main import app
+
+with TestClient(app) as c:
+    assert c.get("/health").json()["schema"]["up_to_date"] is True
+
+    conversations = c.get("/v1/conversations").json()["conversations"]
+    assert len(conversations) == 1
+    assert conversations[0]["title"] == "Deploy planning"
+    assert conversations[0]["message_count"] == 2
+
+    # Data written before the column existed is readable and writable.
+    cid = conversations[0]["id"]
+    assert c.patch(f"/v1/conversations/{cid}", json={"persona": "engineer"}).status_code == 200
+
+    messages = c.get(f"/v1/conversations/{cid}").json()["messages"]
+    assert [m["content"] for m in messages] == ["how do I deploy?", "Use the runbook."]
+
+    # Tables added by later migrations are live.
+    assert c.get("/v1/mcp/servers").status_code == 200
+    # And the upgraded database still accepts new writes.
+    assert c.post("/v1/chat", json={"message": "hello"}).status_code == 200
+
+print("OK")
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=BACKEND,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "DATABASE_URL": url,
+            "KNOWLEDGE_DIR": str(tmp_path / "kb"),
+            "PYTHONPATH": str(BACKEND),
+            "HOME": "/tmp",
+        },
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert "OK" in result.stdout, result.stderr[-1500:]
