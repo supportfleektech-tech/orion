@@ -1,4 +1,0 @@
-import { Brain, Database, FlaskConical, GitBranch, Plug, Shield, Settings2, TerminalSquare, Workflow } from "lucide-react";
-
-const icons: Record<string, any> = {Tasks:Workflow,Memory:Brain,Knowledge:Database,Tools:TerminalSquare,MCP:GitBranch,Automations:Workflow,Connectors:Plug,Evaluation:FlaskConical,Security:Shield,Settings:Settings2};
-export function Placeholder({title}:{title:string}) { const Icon=icons[title] ?? Settings2; return <div className="page"><div className="page-title"><Icon size={20}/><div><div className="eyebrow">CONTROL PLANE</div><h1>{title}</h1></div></div><div className="panel empty-panel"><Icon size={34}/><h2>{title} workspace</h2><p>This route is intentionally present in the starter so the product can grow without reworking navigation. Wire it to the matching API module described in the documentation.</p></div></div> }

@@ -1,0 +1,8 @@
+# Keep the build context small. node_modules is reinstalled from the lockfile
+# inside the image, and a stale local copy can carry the wrong platform's
+# native binaries.
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+.vite/
+*.log

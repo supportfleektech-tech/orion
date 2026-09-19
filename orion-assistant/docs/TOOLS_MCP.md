@@ -1,71 +1,57 @@
-# Tools + MCP
+# Tools
 
-## Tool gateway
+## Registry
 
-All tools, including MCP tools, must enter through the same gateway:
+`ToolDefinition(name, description, parameters, risk, requires_confirmation, handler, category, tags, enabled)`
 
-```text
-LLM -> ToolPolicy -> CapabilityCheck -> ApprovalGate -> ToolRunner -> ResultValidator -> Audit
+`parameters` is JSON Schema and is passed straight to the model as an OpenAI function definition.
+`registry.openai_schemas()` filters out anything the policy engine currently disallows, so the model
+cannot be tempted by capabilities it may not use.
+
+## Built-in tools
+
+| Tool | Category | Risk | Notes |
+|---|---|---|---|
+| `calculate` | utility | low | AST allowlist, bounded exponent |
+| `current_time` | utility | low | UTC |
+| `list_files` | files | low | Confined to `KNOWLEDGE_DIR` |
+| `read_file` | files | low | Confined, 20k char cap |
+| `write_file` | files | high | Approval required |
+| `knowledge_search` | knowledge | low | RAG over ingested documents |
+| `memory_search` | memory | low | Long-term memory lookup |
+| `memory_write` | memory | medium | Stores durable facts |
+| `web_search` | web | medium | SearXNG, requires `ENABLE_WEB_SEARCH` |
+| `fetch_page` | network | medium | Readable text extraction |
+| `http_request` | network | high | Approval + allowlist |
+| `shell_exec` | shell | destructive | Approval, denylist, timeout, confined cwd |
+| `browse_page` | browser | high | Approval, Playwright |
+
+## Adding a tool
+
+```python
+from app.tools.registry import ToolDefinition, registry
+
+async def my_tool(args: dict) -> dict:
+    return {"echo": args["text"]}
+
+registry.register(ToolDefinition(
+    name="my_tool",
+    description="Echo text back. Used for demonstration.",
+    parameters={"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+    risk="low",
+    category="utility",
+    handler=my_tool,
+))
 ```
 
-A tool definition contains:
+Register it from `app/tools/builtin.py` (or any module imported by `app.main`). Choose the risk tier
+honestly: anything that writes, spends, sends or deletes is `high` or `destructive`.
 
-- name;
-- description;
-- JSON schema;
-- capability scope;
-- risk tier;
-- idempotency classification;
-- timeout;
-- retry policy;
-- allowed network destinations;
-- approval requirement.
+Handlers must be `async`, accept a single dict and return a JSON-serialisable dict. Raise exceptions
+for failures — the runtime catches them, records them and reports them to the model.
 
-## MCP integration
+## MCP
 
-MCP gives ORION a standard discovery and invocation layer for tools/resources/prompts. The architecture should support:
-
-- local stdio servers for private desktop tools;
-- Streamable HTTP for remote servers;
-- authenticated servers;
-- per-tool allow/deny lists;
-- server health;
-- server provenance;
-- schema caching;
-- tool annotations such as read-only/destructive hints.
-
-Do not let a third-party MCP server bypass ORION's own permission model.
-
-## High-value internal tools
-
-### Knowledge
-`search_knowledge`, `open_document`, `list_sources`
-
-### Files
-`list_files`, `read_file`, `write_file` (approval), `move_file` (approval)
-
-### Code
-`git_status`, `git_diff`, `run_tests`, `run_linter`, `apply_patch` (sandbox)
-
-### Web
-`web_search`, `open_url`, `extract_page`, `download_file`
-
-### Browser
-`browser_open`, `browser_click`, `browser_type`, `browser_screenshot`
-
-### Data
-`sql_read`, `python_sandbox`, `csv_analyze`
-
-### Automation
-`schedule_task`, `run_workflow`, `cancel_task`
-
-## Shell policy
-
-Never expose unrestricted shell as a default LLM tool. Use an allowlisted command runner inside a sandbox with:
-
-- working-directory jail;
-- network isolation;
-- CPU/RAM/time quotas;
-- output limits;
-- explicit command allowlist;
-- read-only mode when possible.
+ORION's tool contract is intentionally MCP-shaped (name, description, JSON Schema, handler), so a
+client adapter can map external MCP servers into the registry. Federation is planned for v1.2; see
+`ROADMAP.md`.

@@ -1,45 +1,35 @@
 # Data Model
 
-## Primary entities
+SQLAlchemy 2.0 declarative models in `backend/app/db/models.py`. Created automatically by
+`init_db()` at startup on both SQLite and Postgres.
 
-### conversations
-Conversation metadata.
+| Table | Purpose | Key columns |
+|---|---|---|
+| `conversations` | Chat threads | `id`, `title`, `pinned`, `archived`, `updated_at` |
+| `messages` | Turns | `conversation_id`, `role`, `content`, `provider`, `model`, `latency_ms`, `meta` |
+| `memories` | Long-term memory | `kind`, `key` (unique-ish upsert handle), `content`, `source`, `confidence`, `pinned`, `embedding` |
+| `documents` | Ingested sources | `name`, `path`, `hash` (dedupe), `size_bytes`, `chunk_count` |
+| `chunks` | RAG units | `document_id`, `chunk_index`, `content`, `embedding`, `meta` |
+| `tool_runs` | Tool telemetry | `tool_name`, `arguments`, `result`, `risk`, `status`, `duration_ms`, `error` |
+| `agent_runs` | Agent telemetry | `task`, `state`, `provider`, `model`, `result`, `trace`, `duration_ms` |
+| `approvals` | Human-in-the-loop | `tool_name`, `arguments`, `reason`, `status`, `result`, `resolved_at` |
+| `automations` | Scheduled work | `name`, `prompt`, `schedule_seconds`, `enabled`, `last_run_at`, `last_status`, `last_result` |
+| `audit_events` | Governance log | `event_type`, `actor`, `summary`, `details` |
+| `settings` | Persisted overrides | `key`, `value` |
 
-### messages
-Immutable transcript events. Never overwrite past user messages.
+## Embeddings
 
-### memories
-Durable facts, summaries, preferences, decisions and procedural notes, each with source and confidence.
+Stored as JSON arrays for portability across SQLite and Postgres, and scored in Python
+(`services/embeddings.cosine`). With Postgres + pgvector you can add native `vector` columns and an
+HNSW index for large corpora; the retrieval functions are the only code that needs to change.
 
-### documents
-One ingested file or web source.
+Dimension is `EMBEDDING_DIM` (default 768, matching `nomic-embed-text`). The hashed fallback
+embedder produces the same dimensionality, so the two are interchangeable at the storage layer —
+though mixing them within one corpus lowers recall. Re-ingest after switching embedders.
 
-### chunks
-Searchable document segments with vector embeddings.
+## Lifecycle
 
-### agent_runs
-Long-running task state machine and trace.
-
-### tool_runs
-Every tool invocation and its status/result/error.
-
-### approvals
-Pending human checkpoints for privileged actions.
-
-### connector_secrets
-Indirection records. Production values should live in OS keychains/Vault-like stores, not plaintext DB columns.
-
-### audit_events
-Security and operational audit trail.
-
-## Recommended future fields
-
-`tenant_id`, `user_id`, `session_id`, `trace_id`, `parent_run_id`, `policy_snapshot`, `source_uri`, `expires_at`, `content_hash`, `model_revision`, `prompt_revision`.
-
-## Memory lifecycle
-
-```text
-capture -> candidate -> validate -> consolidate -> active -> stale -> archive
-```
-
-Never treat every model-generated sentence as a truth. Prefer explicit user statements, verified tool results and repeated evidence.
+* Documents deduplicate on content hash; re-ingesting the same path replaces prior chunks.
+* Deleting a document cascades to its chunks; deleting a conversation cascades to its messages.
+* Each completed agent run writes a low-confidence `interaction_summary` memory so the assistant
+  accumulates operational context without asserting new facts.

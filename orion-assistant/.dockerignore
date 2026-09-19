@@ -1,0 +1,18 @@
+# The backend image builds from the project root (it needs evals/ and
+# migrations/), so keep the build context small and free of local state.
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+**/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+*.db
+*.db-journal
+knowledge/
+.git/
+.github/
+docs/
+*.md
+!README.md

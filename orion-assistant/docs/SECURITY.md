@@ -1,55 +1,105 @@
-# Security Architecture
+# Security
 
-## Threats
+## Threat model
 
-Assume prompts, web pages, documents, MCP servers and API responses can contain malicious instructions.
+ORION is a single-user, local-first assistant that can read files, reach the network and execute
+commands. The main risks are prompt injection causing unwanted tool use, data exfiltration and
+accidental destructive actions.
 
-Major risks:
+## Controls
 
-- prompt injection;
-- data exfiltration;
-- tool abuse;
-- secret leakage;
-- cross-user data leakage;
-- browser session theft;
-- SSRF;
-- path traversal;
-- unsafe code execution;
-- accidental destructive actions.
+### 1. Capability flags (deny by default)
 
-## Defenses
+`ENABLE_WEB_SEARCH`, `ALLOW_NETWORK_TOOL`, `ALLOW_SHELL_TOOL`, `ALLOW_BROWSER_TOOL` are all `false`
+in `.env.example`. Disabled tools are not even advertised to the model.
 
-### Prompt injection
-Retrieved content is untrusted data. Never concatenate retrieved text into system instructions. Use explicit delimiters and provenance metadata.
+### 2. Risk tiers and approvals
 
-### Tool permissions
-The model requests capabilities; policy grants them. The model cannot grant itself access.
+| Tier | Behaviour |
+|---|---|
+| `low` | Executes automatically |
+| `medium` | Executes if its category flag is enabled |
+| `high` | Creates a pending approval request |
+| `destructive` | Creates a pending approval request |
 
-### Network policy
-Outbound network requests should go through an allowlisted network tool. Block loopback/private IPs for arbitrary URL fetchers to reduce SSRF risk.
+Approvals are resolved from the Security page or `POST /v1/approvals/{id}`. Rejected requests never
+execute.
 
-### Secrets
-Do not index secrets. Redact common key/token formats from logs. Never include connector secrets in model context.
+### 3. Kill switch
 
-### Code execution
-Use a sandbox. Start with disabled shell execution (`ALLOW_SHELL_TOOL=false`).
+`POST /v1/security/kill-switch` blocks every tool immediately, regardless of tier or flag. The agent
+can still answer from memory and knowledge.
 
-### Browser isolation
-Use separate profiles per connector/account. Never expose cookies to the model as raw text.
+### 4. Sandboxing
 
-### Approvals
-Anything involving external publication, payments, account modification, destructive changes, or credentials defaults to approval.
+* File tools are confined to `KNOWLEDGE_DIR`; path traversal is rejected by resolved-path checks.
+* Shell commands run in that directory, are argument-parsed (no shell interpolation), deny a list of
+  dangerous binaries and are killed after `SHELL_TIMEOUT_SECONDS`.
+* HTTP requests are limited to http/https and, when `HTTP_ALLOWLIST` is set, to those hosts only.
+* The arithmetic tool uses an AST allowlist — no `eval`, no names, bounded exponents.
 
-### Audit
-Log who/what/when/provider/tool/risk/result, but not raw credentials or full sensitive payloads.
+### 5. Transport and access
 
-## Kill switches
+* `AUTH_ENABLED=true` requires `Authorization: Bearer <ADMIN_TOKEN>` on every mutating endpoint.
+* Per-IP rate limiting (`RATE_LIMIT_PER_MINUTE`).
+* Restrict `CORS_ORIGINS` in production; nginx sets `X-Content-Type-Options`, `X-Frame-Options` and
+  `Referrer-Policy`.
+* Run behind TLS. The container runs as a non-root user (uid 10001).
 
-The UI and environment should support:
+### 6. Audit
 
-- disable cloud;
-- disable web;
-- disable browser;
-- disable writes;
-- disable all tools;
-- local-only emergency mode.
+Every tool execution, denial, approval decision, settings change and kill-switch toggle is written
+to `audit_events` and shown in the Security page.
+
+## Prompt injection guidance
+
+Retrieved memory and documents are injected as *context*, and the system prompt instructs the model
+to treat them as untrusted evidence rather than instructions. Because instruction-following can
+still be subverted, the real defence is the policy gate: injected text cannot execute a high-risk
+tool without a human approval click.
+
+## Reporting
+
+Do not open a public issue for vulnerabilities. Contact the maintainer directly.
+
+
+## Hardening notes
+
+Two things that matter only once ORION is reachable beyond localhost, both
+fixed and covered by tests in `backend/tests/test_auth.py`:
+
+**Rate-limit state is bounded.** Buckets are keyed by client address and swept
+every 500 requests, dropping any client not seen inside the 60s window.
+Without the sweep the map grew by one entry per distinct address forever —
+measured at ~16MB for 20,000 addresses — which an attacker can drive simply by
+varying the source address.
+
+**The admin token is compared with `secrets.compare_digest`.** A plain `!=`
+short-circuits on the first differing byte, leaking the shared prefix length
+through response timing, which is enough to recover a token byte by byte. An
+unset `ADMIN_TOKEN` also never authorises an empty bearer header.
+
+### The local-only guarantee
+
+`LOCAL_ONLY=true` (or the Settings toggle) means no request leaves the machine,
+and it is enforced at the routing layer rather than the UI: an explicit
+`mode: "cloud"` on a chat request cannot override it, and a failing local model
+degrades to retrieval-only rather than falling through to a cloud provider.
+
+This is the failure mode worth guarding, because it is silent — a leak
+produces a perfectly normal answer and no error. Two tests in
+`test_model_routing.py` cover it, one on the planned attempts and one
+asserting the cloud client is never called at all.
+
+### Before exposing ORION to a network
+
+The defaults assume a single user on their own machine:
+
+* `AUTH_ENABLED=false` — turn it on and set `ADMIN_TOKEN`.
+* `CORS_ORIGINS=*` — narrow it to the origin you actually serve.
+* `RATE_LIMIT_PER_MINUTE` applies per client address. Behind a reverse proxy
+  every request appears to come from the proxy, collapsing all users into one
+  bucket, so set `TRUST_PROXY_HEADERS=true` — but *only* behind a proxy you
+  control that overwrites `X-Forwarded-For`. With no proxy in front, trusting
+  it lets a caller forge a fresh bucket per request and defeat the limiter
+  entirely. The bundled `docker compose` stack sets this for you.
