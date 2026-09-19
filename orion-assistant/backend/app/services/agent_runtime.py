@@ -216,6 +216,35 @@ def vision_capable(model_name: str) -> bool:
     return any(tag.strip() and tag.strip() in name for tag in settings.vision_models.split(","))
 
 
+def _tool_message(call: Any, result: dict[str, Any], remaining: int) -> tuple[dict[str, Any], int]:
+    """Render a tool result for the model, within the run's output budget.
+
+    Clipping each result individually is not enough: they accumulate across
+    loop iterations, so a run that keeps reading large files grows the prompt
+    until the provider rejects it. Once the budget is spent the model is told
+    the output was withheld, which is information it can act on -- silently
+    sending nothing looks like the tool returned empty.
+    """
+    payload = json.dumps(result, ensure_ascii=False, default=str)
+    limit = min(settings.max_tool_result_chars, max(remaining, 0))
+
+    if limit <= 0:
+        payload = json.dumps(
+            {
+                "ok": result.get("ok"),
+                "omitted": "Tool output budget for this run is exhausted; "
+                           "narrow the request or work from what you already have.",
+            }
+        )
+    elif len(payload) > limit:
+        payload = payload[:limit] + "…[truncated]"
+
+    return (
+        {"role": "tool", "tool_call_id": call.id, "content": payload},
+        max(remaining - len(payload), 0),
+    )
+
+
 def _clip(text: str, limit: int) -> str:
     """Trim to a character budget, marking it so the model knows it is partial."""
     text = text or ""
@@ -291,6 +320,7 @@ async def run_agent(
     provider, model, final_text = "offline", "degraded", ""
     degraded = False
     tools = registry.openai_schemas()
+    tool_budget = settings.max_tool_output_chars
 
     try:
         for step in range(settings.max_tool_loops):
@@ -322,13 +352,8 @@ async def run_agent(
                     args = {}
                 result = await execute_tool(db, call.function.name, args, auto_approve=auto_approve)
                 trace.append({"step": step, "tool": call.function.name, "arguments": args, "result_ok": result.get("ok")})
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": json.dumps(result, ensure_ascii=False, default=str)[:8000],
-                    }
-                )
+                tool_message, tool_budget = _tool_message(call, result, tool_budget)
+                messages.append(tool_message)
 
         if degraded:
             grounded = extractive_answer(task, memories, chunks)
@@ -459,6 +484,7 @@ async def stream_agent(
     degraded = False
     streamed_any = False
     tools = registry.openai_schemas()
+    tool_budget = settings.max_tool_output_chars
 
     try:
         for step in range(settings.max_tool_loops):
@@ -512,13 +538,8 @@ async def stream_agent(
                 }
                 trace.append(tool_entry)
                 yield _sse("tool_result", {**tool_entry, "error": result.get("error")})
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": json.dumps(result, ensure_ascii=False, default=str)[:8000],
-                    }
-                )
+                tool_message, tool_budget = _tool_message(call, result, tool_budget)
+                messages.append(tool_message)
 
         if degraded:
             grounded = extractive_answer(task, memories, chunks)

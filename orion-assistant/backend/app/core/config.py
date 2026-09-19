@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     max_history_chars: int = 24000
     #: Character ceiling on a single retrieved memory injected into the prompt.
     max_memory_chars: int = 2000
+    #: Character ceiling on a single tool result fed back to the model.
+    max_tool_result_chars: int = 8000
+    #: Ceiling on ALL tool output within one agent run. The per-result clip is
+    #: not a bound on the conversation: results accumulate across loops, so six
+    #: iterations returning large payloads pushed the prompt past 10k tokens
+    #: with one call per turn, and several times that with parallel calls.
+    max_tool_output_chars: int = 24000
     memory_similarity_min: float = 0.25
     embedding_dim: int = 768
 
