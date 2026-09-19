@@ -188,13 +188,38 @@ def conversation_history(db: Session, conversation_id: str | None) -> list[dict[
         .order_by(Message.id.desc())
         .limit(settings.max_history_messages)
     ).all()
-    return [{"role": m.role, "content": m.content} for m in reversed(rows)][:-1]
+
+    # Drop the newest row: it is the turn currently being answered, which the
+    # caller appends itself.
+    ordered = [{"role": m.role, "content": m.content or ""} for m in reversed(rows)][:-1]
+
+    # Then bound by size, not just by count. Walk backwards so the most recent
+    # turns survive -- they are the ones the next reply depends on. A single
+    # oversized message is truncated rather than dropped, so the model still
+    # sees that the turn happened.
+    budget = settings.max_history_chars
+    kept: list[dict[str, Any]] = []
+    for message in reversed(ordered):
+        content = message["content"]
+        if len(content) > budget:
+            if budget > 400:
+                kept.append({**message, "content": content[:budget] + "\n…[truncated]"})
+            break
+        kept.append(message)
+        budget -= len(content)
+    return list(reversed(kept))
 
 
 def vision_capable(model_name: str) -> bool:
     """True when the active model can actually look at images."""
     name = (model_name or "").lower()
     return any(tag.strip() and tag.strip() in name for tag in settings.vision_models.split(","))
+
+
+def _clip(text: str, limit: int) -> str:
+    """Trim to a character budget, marking it so the model knows it is partial."""
+    text = text or ""
+    return text if len(text) <= limit else text[:limit] + "…[truncated]"
 
 
 def build_user_message(task: str, attachments: list[Any] | None) -> dict[str, Any]:
@@ -215,7 +240,13 @@ async def build_context(db: Session, task: str) -> tuple[list[dict], list[dict],
         chunks = []
     parts = []
     if memories:
-        parts.append("Relevant memory:\n" + "\n".join(f"- {m['content']} (score={m['score']})" for m in memories))
+        parts.append(
+            "Relevant memory:\n"
+            + "\n".join(
+                f"- {_clip(m['content'], settings.max_memory_chars)} (score={m['score']})"
+                for m in memories
+            )
+        )
     if chunks:
         parts.append(
             "Relevant knowledge:\n"

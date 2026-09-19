@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     reranker_backend: str = "lexical"  # lexical | cross-encoder
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     max_history_messages: int = 20
+    #: Character ceiling on the replayed conversation history. The message
+    #: count alone is not a bound: twenty turns that each pasted a file is
+    #: hundreds of thousands of characters, which overflows a small local
+    #: model's context window and gets the whole request rejected.
+    max_history_chars: int = 24000
+    #: Character ceiling on a single retrieved memory injected into the prompt.
+    max_memory_chars: int = 2000
     memory_similarity_min: float = 0.25
     embedding_dim: int = 768
 
