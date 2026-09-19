@@ -50,3 +50,25 @@ secret or chain-of-thought disclosure, and stating assumptions when ambiguous.
 Each iteration appends `{step, provider, model, latency_ms, text, tool_calls}` and each tool call
 appends `{step, tool, arguments, result_ok}`. Traces are visible at `/v1/runs/{id}` and in the
 Observability page.
+
+
+## Prompt budget
+
+Every request carries the system prompt, the persona, retrieved context and
+replayed history. Each part is bounded, because exceeding the model's context
+window is a hard failure rather than a degradation:
+
+| Part | Limit | Setting |
+|---|---|---|
+| Conversation history | 20 messages **and** 24,000 characters | `MAX_HISTORY_MESSAGES`, `MAX_HISTORY_CHARS` |
+| A single memory | 2,000 characters | `MAX_MEMORY_CHARS` |
+| A knowledge chunk | 600 characters | — |
+| Retrieved memories/chunks | 8 | `MAX_CONTEXT_CHUNKS` |
+
+History is trimmed from the **oldest** end so recent turns survive, and an
+oversized single message is truncated with a marker rather than dropped, so
+the model can tell the turn happened.
+
+The character caps matter more than the counts. Twenty short turns is a few
+thousand characters; twenty turns that pasted file contents measured at
+~95,000 tokens, roughly 23x a 4k window. Raise these on a long-context model.

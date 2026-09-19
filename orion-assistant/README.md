@@ -212,7 +212,7 @@ POST   /v1/voice/transcribe
 ```
 
 * 37 frontend tests (Vitest + Testing Library) covering the command palette,
-  shortcut overlay and UI primitives, plus 533 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
+  shortcut overlay and UI primitives, plus 546 backend tests, including the full agent tool-calling loop driven by a mock OpenAI-compatible
   model (multi-step chains, parallel calls, bounded iteration, failure recovery, approval gating,
   kill switch), the SSE token-streaming contract, migration upgrade paths, and real MCP round trips
   against a live server subprocess
