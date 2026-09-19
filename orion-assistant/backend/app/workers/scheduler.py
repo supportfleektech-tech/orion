@@ -32,8 +32,13 @@ class AutomationScheduler:
             self._task.cancel()
             try:
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+                pass  # expected: we just cancelled it
+            except Exception:
+                # The loop already catches per-tick failures, so reaching here
+                # means the scheduler itself died. Swallowing that silently
+                # leaves automations permanently stopped with no trace of why.
+                log.exception("Automation scheduler stopped with an error")
             self._task = None
 
     async def _loop(self) -> None:

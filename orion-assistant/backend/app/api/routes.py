@@ -165,15 +165,30 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     return await _run_chat(req, db)
 
 
+def _resolve_conversation(db: Session, conversation_id: str | None, message: str) -> Conversation:
+    """Load the conversation, or start a new one.
+
+    An unknown id is a client bug -- a stale tab, a bad link -- so it 404s.
+    The buffered path used to adopt whatever id it was handed and create a row
+    with it, which let callers choose primary keys and silently forked history
+    into a conversation the user never opened. The streaming path did not,
+    so the same request behaved differently depending on the endpoint.
+    """
+    if conversation_id:
+        conversation = db.get(Conversation, conversation_id)
+        if conversation is None:
+            raise HTTPException(404, f"Conversation not found: {conversation_id}")
+        return conversation
+
+    conversation = Conversation(title=message[:80] or "New conversation")
+    db.add(conversation)
+    db.commit()
+    return conversation
+
+
 async def _run_chat(req: ChatRequest, db: Session, attachments: list | None = None) -> dict:
     """Shared chat implementation for both the JSON and multipart endpoints."""
-    conversation = db.get(Conversation, req.conversation_id) if req.conversation_id else None
-    if conversation is None:
-        conversation = Conversation(title=req.message[:80] or "New conversation")
-        if req.conversation_id:
-            conversation.id = req.conversation_id
-        db.add(conversation)
-        db.commit()
+    conversation = _resolve_conversation(db, req.conversation_id, req.message)
 
     db.add(
         Message(
@@ -207,11 +222,7 @@ async def _run_chat(req: ChatRequest, db: Session, attachments: list | None = No
 
 @router.post("/v1/chat/stream", tags=["chat"], dependencies=[Depends(require_auth)])
 async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
-    conversation = db.get(Conversation, req.conversation_id) if req.conversation_id else None
-    if conversation is None:
-        conversation = Conversation(title=req.message[:80] or "New conversation")
-        db.add(conversation)
-        db.commit()
+    conversation = _resolve_conversation(db, req.conversation_id, req.message)
     db.add(Message(conversation_id=conversation.id, role="user", content=req.message))
     db.commit()
 

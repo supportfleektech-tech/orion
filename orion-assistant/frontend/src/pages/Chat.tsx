@@ -413,8 +413,20 @@ export function Chat() {
         void loadConversations();
       } catch (fallbackErr) {
         const message = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        notify(message, "err");
-        setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${message}` }]);
+
+        // A stale link or a deleted conversation now 404s rather than
+        // silently creating a new row. Drop the dead id and keep the text so
+        // the user can resend instead of losing what they typed.
+        if (/Conversation not found/i.test(message)) {
+          setConversationId(undefined);
+          setParams({}, { replace: true });
+          setMessages((m) => m.slice(0, -1));
+          setInput(text);
+          notify("That conversation no longer exists — starting a new one.", "err");
+        } else {
+          notify(message, "err");
+          setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${message}` }]);
+        }
       }
     } finally {
       setBusy(false);

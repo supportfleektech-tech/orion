@@ -108,3 +108,46 @@ def test_conversation_patch_validation(client):
     cid = client.post("/v1/chat", json={"message": "validate"}).json()["conversation_id"]
     assert client.patch(f"/v1/conversations/{cid}", json={}).status_code == 400
     assert client.patch("/v1/conversations/does-not-exist", json={"title": "x"}).status_code == 404
+
+
+# ------------------------------------------------- conversation resolution
+def test_an_unknown_conversation_id_is_a_404_not_a_new_conversation(client):
+    """The buffered path used to adopt whatever id it was handed and create a
+    row with it. That let a caller choose primary keys, and a stale tab would
+    silently fork history into a conversation the user never opened."""
+    response = client.post(
+        "/v1/chat", json={"message": "hello", "conversation_id": "ghost-12345"}
+    )
+    assert response.status_code == 404
+    assert "ghost-12345" in response.json()["detail"]
+
+
+def test_the_streaming_endpoint_agrees(client):
+    """Both paths had different behaviour for the same request."""
+    response = client.post(
+        "/v1/chat/stream", json={"message": "hello", "conversation_id": "ghost-12345"}
+    )
+    assert response.status_code == 404
+
+
+def test_a_rejected_id_creates_nothing(client):
+    before = len(client.get("/v1/conversations?limit=500").json()["conversations"])
+    client.post("/v1/chat", json={"message": "hello", "conversation_id": "ghost-abc"})
+    after = len(client.get("/v1/conversations?limit=500").json()["conversations"])
+    assert after == before
+
+
+def test_omitting_the_id_still_starts_a_conversation(client):
+    body = client.post("/v1/chat", json={"message": "start fresh"}).json()
+    assert body["conversation_id"]
+
+
+def test_an_existing_conversation_continues(client):
+    first = client.post("/v1/chat", json={"message": "one"}).json()
+    second = client.post(
+        "/v1/chat", json={"message": "two", "conversation_id": first["conversation_id"]}
+    ).json()
+
+    assert second["conversation_id"] == first["conversation_id"]
+    messages = client.get(f"/v1/conversations/{first['conversation_id']}").json()["messages"]
+    assert [m["content"] for m in messages if m["role"] == "user"] == ["one", "two"]
