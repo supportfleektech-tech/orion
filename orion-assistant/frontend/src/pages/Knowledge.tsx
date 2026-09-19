@@ -180,7 +180,17 @@ export function Knowledge() {
         </Panel>
       </div>
 
-      <Panel subtitle="LIBRARY" title={`${documents.length} documents`}>
+      <Panel
+        subtitle="LIBRARY"
+        title={`${documents.length} documents`}
+        right={
+          // The endpoint is bounded, so say so rather than quietly showing a
+          // partial list as if it were everything.
+          data && data.total > documents.length ? (
+            <Badge tone="info">showing newest {documents.length} of {data.total}</Badge>
+          ) : undefined
+        }
+      >
         {loading && <Loading />}
         {error && <ErrorBlock message={error} />}
         {!loading && documents.length === 0 && (

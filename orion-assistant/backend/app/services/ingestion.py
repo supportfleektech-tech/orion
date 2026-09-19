@@ -172,8 +172,16 @@ async def search_chunks(db: Session, query: str, limit: int | None = None) -> li
     return rerank(query, candidates, limit=limit)
 
 
-def list_documents(db: Session) -> list[dict]:
-    docs = db.scalars(select(Document).order_by(Document.created_at.desc())).all()
+def list_documents(db: Session, limit: int = 200, offset: int = 0) -> list[dict]:
+    """Newest documents first.
+
+    Bounded because this backs a UI list that grows with every ingest: a
+    knowledge base of a few thousand files would otherwise serialise the whole
+    table on every page load.
+    """
+    docs = db.scalars(
+        select(Document).order_by(Document.created_at.desc()).limit(limit).offset(offset)
+    ).all()
     return [
         {
             "id": d.id,

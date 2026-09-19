@@ -634,7 +634,7 @@ export const api = {
   pinMemory: (id: string, pinned: boolean) => post<unknown>(`/v1/memory/${id}/pin?pinned=${pinned}`),
   deleteMemory: (id: string) => del<unknown>(`/v1/memory/${id}`),
 
-  documents: () => get<{ documents: DocumentItem[] }>("/v1/knowledge/documents"),
+  documents: () => get<{ documents: DocumentItem[]; total: number }>("/v1/knowledge/documents"),
   ingestText: (name: string, content: string) => post<unknown>("/v1/knowledge/ingest-text", { name, content }),
   ingestPath: (path: string) => post<IngestResult>("/v1/knowledge/ingest", { path }),
   uploadDocument: (file: File) => {

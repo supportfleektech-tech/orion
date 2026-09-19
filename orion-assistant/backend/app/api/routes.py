@@ -263,6 +263,20 @@ def list_conversations(db: Session = Depends(get_db), limit: int = 50, include_a
     rows = db.scalars(
         stmt.order_by(Conversation.pinned.desc(), Conversation.updated_at.desc()).limit(limit)
     ).all()
+
+    # Count messages for the whole page in one grouped query. Counting inside
+    # the loop issued one SELECT per conversation -- 51 queries for 50 rows,
+    # and the cost grew with the sidebar rather than staying flat.
+    counts: dict[str, int] = {}
+    if rows:
+        counts = dict(
+            db.execute(
+                select(Message.conversation_id, func.count())
+                .where(Message.conversation_id.in_([c.id for c in rows]))
+                .group_by(Message.conversation_id)
+            ).all()
+        )
+
     return {
         "conversations": [
             {
@@ -271,9 +285,7 @@ def list_conversations(db: Session = Depends(get_db), limit: int = 50, include_a
                 "pinned": c.pinned,
                 "archived": c.archived,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-                "message_count": db.scalar(
-                    select(func.count()).select_from(Message).where(Message.conversation_id == c.id)
-                ),
+                "message_count": counts.get(c.id, 0),
             }
             for c in rows
         ]
@@ -525,8 +537,13 @@ def remove_memory(memory_id: str, db: Session = Depends(get_db)):
 
 # ---------------------------------------------------------------- knowledge
 @router.get("/v1/knowledge/documents", tags=["knowledge"])
-def documents(db: Session = Depends(get_db)):
-    return {"documents": list_documents(db)}
+def documents(
+    db: Session = Depends(get_db),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
+    total = db.scalar(select(func.count()).select_from(Document)) or 0
+    return {"documents": list_documents(db, limit=limit, offset=offset), "total": total}
 
 
 @router.post("/v1/knowledge/ingest", tags=["knowledge"], dependencies=[Depends(require_auth)])
