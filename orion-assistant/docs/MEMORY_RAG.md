@@ -44,3 +44,23 @@ written through `memory_write` or the UI default to 0.7–0.95.
 
 Use the Memory page to pin authoritative facts, delete wrong ones and inspect confidence. Keys give
 you idempotent upserts (`user.tz`, `deploy.topology`), preventing duplicate drift.
+
+
+## Retrieval with no embedding model
+
+When Ollama is unreachable, embeddings fall back to a deterministic hashed
+bag-of-ngrams. It is free and offline, but it compares *tokens*, not meaning,
+which has two consequences worth knowing:
+
+* **Tokens are stemmed** before hashing, so "units" matches "unit" and
+  "prefers" matches "preference". Without this, offline retrieval only found
+  text worded exactly like the question.
+* **Cosine is clamped to `[0, 1]`.** A negative similarity from the hashed
+  embedder is an artefact of sign collisions between hash buckets, not
+  evidence of opposite meaning, and it was subtracting from the blended score.
+
+Degraded answers are additionally gated on sharing meaningful words with the
+question — stopwords excluded — so an unrelated question gets an honest "no
+model is reachable" rather than whatever text happened to be stored. Assembling
+a confident non-sequitur is worse than admitting ignorance, because the user
+cannot tell which one they are looking at.
