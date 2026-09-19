@@ -64,10 +64,20 @@ window is a hard failure rather than a degradation:
 | A single memory | 2,000 characters | `MAX_MEMORY_CHARS` |
 | A knowledge chunk | 600 characters | — |
 | Retrieved memories/chunks | 8 | `MAX_CONTEXT_CHUNKS` |
+| A single tool result | 8,000 characters | `MAX_TOOL_RESULT_CHARS` |
+| All tool output in one run | 24,000 characters | `MAX_TOOL_OUTPUT_CHARS` |
 
 History is trimmed from the **oldest** end so recent turns survive, and an
 oversized single message is truncated with a marker rather than dropped, so
 the model can tell the turn happened.
+
+Tool output needs both limits. Clipping each result bounds one call but not
+the run: results accumulate across loop iterations, so six iterations reading
+large files grew the prompt to ~42,000 characters with a single call per turn,
+and several times that with parallel calls. When the per-run budget is spent
+the model is told the output was withheld — returning nothing instead would be
+indistinguishable from a tool that genuinely found nothing, and it would
+simply retry.
 
 The character caps matter more than the counts. Twenty short turns is a few
 thousand characters; twenty turns that pasted file contents measured at
