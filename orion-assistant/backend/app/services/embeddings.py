@@ -16,8 +16,24 @@ _cache: dict[str, list[float]] = {}
 _provider_state = {"remote_ok": True}
 
 
+def _stem(word: str) -> str:
+    """Strip the common English suffixes so morphological variants collide.
+
+    The hashed embedder and keyword_score both compare exact tokens, so
+    without this "units" and "unit", or "prefers" and "preference", score zero
+    against each other -- offline retrieval only found text worded exactly
+    like the question. Not a real stemmer, deliberately: this needs to be
+    cheap, dependency-free and deterministic, and it only has to make related
+    words hash to the same bucket.
+    """
+    for suffix in ("ences", "ence", "ing", "ers", "er", "es", "s"):
+        if len(word) > len(suffix) + 2 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
 def _tokens(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+    return [_stem(t) for t in _TOKEN_RE.findall(text.lower())]
 
 
 def hashed_embedding(text: str, dim: int | None = None) -> list[float]:
@@ -89,7 +105,13 @@ def cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a)) or 1.0
     nb = math.sqrt(sum(y * y for y in b)) or 1.0
-    return dot / (na * nb)
+    similarity = dot / (na * nb)
+    # Clamp to [0, 1]. A negative cosine is meaningless for the hashed
+    # fallback -- it is an artefact of random sign collisions between hash
+    # buckets, not evidence of opposite meaning -- and it was actively
+    # subtracting from the blended score, pushing genuinely related text below
+    # the retrieval threshold when no embedding model was reachable.
+    return max(0.0, similarity)
 
 
 def keyword_score(query: str, content: str) -> float:
