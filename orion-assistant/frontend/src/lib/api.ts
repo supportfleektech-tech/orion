@@ -2,13 +2,41 @@ const RAW = (import.meta.env.VITE_API_URL ?? "").trim();
 export const API_BASE = RAW.replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (cause) {
+    // fetch only rejects when the request never reached a server: the backend
+    // is down, the port is wrong, or the network is gone. The browser's own
+    // "Failed to fetch" is accurate and useless, so say what to actually do.
+    throw new Error(
+      "Cannot reach the ORION backend. Start it with ./scripts/run-backend.sh, " +
+        "or check that it is listening on the expected port.",
+      { cause },
+    );
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("Not authorised. Set ORION_AUTH_TOKEN, or disable AUTH_ENABLED for local use.");
+  }
+
+  if (res.status >= 500) {
+    // A 5xx body is usually a stack trace or empty; neither helps here.
+    let detail = "";
+    try {
+      detail = (await res.json()).detail ?? "";
+    } catch {
+      /* no JSON body */
+    }
+    throw new Error(detail || `The backend failed with HTTP ${res.status}. Check its logs.`);
+  }
+
   if (!res.ok) {
     let detail = res.statusText;
     try {
