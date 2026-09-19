@@ -97,6 +97,9 @@ The defaults assume a single user on their own machine:
 
 * `AUTH_ENABLED=false` — turn it on and set `ADMIN_TOKEN`.
 * `CORS_ORIGINS=*` — narrow it to the origin you actually serve.
-* `RATE_LIMIT_PER_MINUTE` applies per client address; behind a reverse proxy
-  every request appears to come from the proxy unless it forwards the real
-  address.
+* `RATE_LIMIT_PER_MINUTE` applies per client address. Behind a reverse proxy
+  every request appears to come from the proxy, collapsing all users into one
+  bucket, so set `TRUST_PROXY_HEADERS=true` — but *only* behind a proxy you
+  control that overwrites `X-Forwarded-For`. With no proxy in front, trusting
+  it lets a caller forge a fresh bucket per request and defeat the limiter
+  entirely. The bundled `docker compose` stack sets this for you.
