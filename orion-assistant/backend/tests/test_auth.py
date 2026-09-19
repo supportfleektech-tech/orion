@@ -174,3 +174,65 @@ def test_an_empty_configured_token_never_authorises(monkeypatch):
     with pytest.raises(HTTPException) as excinfo:
         security.require_auth("Bearer ")
     assert excinfo.value.status_code in (401, 403)
+
+
+# ===================================================================
+# Client identity behind a proxy
+# ===================================================================
+
+class _ProxiedReq:
+    def __init__(self, peer: str, forwarded: str | None = None) -> None:
+        self.client = type("C", (), {"host": peer})()
+        self.headers = {"x-forwarded-for": forwarded} if forwarded else {}
+
+
+def test_the_forwarded_header_is_ignored_by_default():
+    """Trusting it unconditionally lets any caller forge a fresh rate-limit
+    identity on every request."""
+    assert not settings.trust_proxy_headers, "trusting proxies must be opt-in"
+    assert security.client_key(_ProxiedReq("172.18.0.3", "203.0.113.10")) == "172.18.0.3"
+
+
+def test_a_trusted_proxy_reveals_the_real_client(monkeypatch):
+    """The bundled compose runs nginx in front of the API, so without this
+    every user shares one bucket and one busy client throttles everyone."""
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    assert security.client_key(_ProxiedReq("172.18.0.3", "203.0.113.10")) == "203.0.113.10"
+
+
+def test_a_forged_header_resolves_to_the_forger(monkeypatch):
+    """nginx uses $proxy_add_x_forwarded_for, which appends the real peer to
+    whatever the client sent. Taking the last hop means a spoofed prefix is
+    ignored and the attacker is still rate limited as themselves."""
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    key = security.client_key(_ProxiedReq("172.18.0.3", "1.1.1.1, 203.0.113.99"))
+    assert key == "203.0.113.99"
+
+
+def test_the_socket_address_is_used_when_no_header_is_present(monkeypatch):
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    assert security.client_key(_ProxiedReq("172.18.0.3")) == "172.18.0.3"
+
+
+def test_distinct_users_behind_one_proxy_get_distinct_buckets(monkeypatch):
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 5)
+
+    for i in range(9):
+        asyncio.run(security.rate_limit(_ProxiedReq("172.18.0.3", f"203.0.113.{10 + i % 3}")))
+
+    assert len(security._buckets) == 3, "users behind the proxy were collapsed into one bucket"
+
+
+def test_the_shipped_compose_turns_proxy_trust_on():
+    """The bundled stack always has nginx in front, so the default-off setting
+    has to be switched on there or rate limiting is effectively global."""
+    import pathlib
+
+    import yaml
+
+    compose = yaml.safe_load(
+        (pathlib.Path(__file__).resolve().parent.parent.parent / "docker-compose.yml").read_text()
+    )
+    env = compose["services"]["api"]["environment"]
+    assert str(env.get("TRUST_PROXY_HEADERS")).lower() == "true"

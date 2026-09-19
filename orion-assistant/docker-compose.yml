@@ -8,6 +8,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/orion.db}
       KNOWLEDGE_DIR: /knowledge
+      # The web service proxies everything, so without this every request
+      # looks like it came from the nginx container and all users share one
+      # rate-limit bucket. Safe here because that proxy overwrites the header.
+      TRUST_PROXY_HEADERS: "true"
     volumes:
       - orion-data:/data
       - orion-knowledge:/knowledge

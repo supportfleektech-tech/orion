@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     jwt_secret: str = "replace-me-in-production"
     cors_origins: str = "*"
     rate_limit_per_minute: int = 120
+    #: Trust X-Forwarded-For for client identity. Enable ONLY when ORION sits
+    #: behind a proxy you control that overwrites the header -- the bundled
+    #: nginx does. Left on with no proxy in front, any caller could forge the
+    #: header and hand themselves a fresh rate-limit bucket per request.
+    trust_proxy_headers: bool = False
 
     @property
     def cors_list(self) -> list[str]:

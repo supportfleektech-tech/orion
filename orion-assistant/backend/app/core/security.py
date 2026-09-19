@@ -38,11 +38,30 @@ def require_auth(authorization: str | None = Header(default=None)) -> str:
     return "admin"
 
 
+def client_key(request: Request) -> str:
+    """Identify the caller for rate limiting.
+
+    Behind the bundled nginx every request arrives from the proxy container,
+    so keying on the socket address puts all users in one bucket -- one busy
+    client then throttles everyone else. X-Forwarded-For fixes that, but only
+    a proxy that *overwrites* the header can be believed; otherwise a caller
+    forges it and gets a fresh bucket per request. Hence opt-in, and we take
+    the last hop rather than the client-controlled head of the list.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if not settings.trust_proxy_headers:
+        return peer
+
+    forwarded = request.headers.get("x-forwarded-for", "")
+    hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+    return hops[-1] if hops else peer
+
+
 async def rate_limit(request: Request) -> None:
     limit = settings.rate_limit_per_minute
     if limit <= 0:
         return
-    key = request.client.host if request.client else "unknown"
+    key = client_key(request)
     now = time.time()
 
     _sweeps["since"] += 1
