@@ -28,6 +28,20 @@ def knowledge_root() -> Path:
 
 def read_source(path: Path) -> str:
     suffix = path.suffix.lower()
+
+    # HTML is checked before the plain-text set, which also contains .html:
+    # matching text first made the parser below unreachable and indexed pages
+    # as raw markup, so a search for "script" hit every page on the site.
+    if suffix in {".htm", ".html"}:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser")
+        # Script and style content is code, not prose; indexing it pollutes
+        # retrieval with minified JavaScript.
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        return soup.get_text(" ", strip=True)
+
     if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8", errors="replace")
     if suffix == ".pdf":
@@ -38,10 +52,6 @@ def read_source(path: Path) -> str:
         from docx import Document as DocxDocument
 
         return "\n".join(p.text for p in DocxDocument(str(path)).paragraphs)
-    if suffix in {".htm", ".html"}:
-        from bs4 import BeautifulSoup
-
-        return BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser").get_text(" ")
     raise ValueError(f"Unsupported file type: {suffix or path.name}")
 
 
