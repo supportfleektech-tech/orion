@@ -80,3 +80,23 @@ the environment only.
 3. Disable the offending tool in Settings or Tools.
 4. Delete bad memories in the Memory page.
 5. Release the kill switch.
+
+
+## SQLite tuning
+
+The default database is SQLite, configured on every connection:
+
+| Pragma | Value | Why |
+|---|---|---|
+| `journal_mode` | `WAL` | Readers keep working while a write is in flight |
+| `busy_timeout` | `30000` | Wait out a held write lock instead of failing at the 5s driver default |
+| `synchronous` | `NORMAL` | The usual WAL pairing; much faster than fsync per commit, durable enough for a local assistant |
+| `foreign_keys` | `ON` | Off by default in SQLite, and the cascades depend on it |
+
+`busy_timeout` is the one that matters. SQLite serialises writers, so a long
+agent run holding its transaction can block an incoming write. At the 5s
+default that write **fails**; at 30s it queues and succeeds. A lock held
+longer than 30s is a genuine deadlock and should surface rather than hang.
+
+Point `DATABASE_URL` at Postgres and none of this applies — it handles
+concurrent writers itself.
