@@ -61,3 +61,30 @@ tool without a human approval click.
 ## Reporting
 
 Do not open a public issue for vulnerabilities. Contact the maintainer directly.
+
+
+## Hardening notes
+
+Two things that matter only once ORION is reachable beyond localhost, both
+fixed and covered by tests in `backend/tests/test_auth.py`:
+
+**Rate-limit state is bounded.** Buckets are keyed by client address and swept
+every 500 requests, dropping any client not seen inside the 60s window.
+Without the sweep the map grew by one entry per distinct address forever —
+measured at ~16MB for 20,000 addresses — which an attacker can drive simply by
+varying the source address.
+
+**The admin token is compared with `secrets.compare_digest`.** A plain `!=`
+short-circuits on the first differing byte, leaking the shared prefix length
+through response timing, which is enough to recover a token byte by byte. An
+unset `ADMIN_TOKEN` also never authorises an empty bearer header.
+
+### Before exposing ORION to a network
+
+The defaults assume a single user on their own machine:
+
+* `AUTH_ENABLED=false` — turn it on and set `ADMIN_TOKEN`.
+* `CORS_ORIGINS=*` — narrow it to the origin you actually serve.
+* `RATE_LIMIT_PER_MINUTE` applies per client address; behind a reverse proxy
+  every request appears to come from the proxy unless it forwards the real
+  address.
