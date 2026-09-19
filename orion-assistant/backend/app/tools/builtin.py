@@ -179,7 +179,15 @@ async def shell_exec(args: dict) -> dict:
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=settings.shell_timeout_seconds)
     except TimeoutError:
+        # kill() only signals. Without reaping, the child is left a zombie and
+        # its transport is finalised later against a closed event loop, which
+        # surfaces as "Event loop is closed" noise and leaks a file descriptor
+        # per timeout.
         proc.kill()
+        try:
+            await proc.communicate()
+        except (ProcessLookupError, ValueError):
+            pass  # already gone
         raise TimeoutError("Command timed out") from None
     return {
         "command": command,

@@ -11,3 +11,5 @@ dist/
 *.db-shm
 knowledge/
 .DS_Store
+.coverage
+htmlcov/
