@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     max_history_chars: int = 24000
     #: Character ceiling on a single retrieved memory injected into the prompt.
     max_memory_chars: int = 2000
+    #: Character ceiling on one skill's instructions in the prompt.
+    max_skill_chars: int = 2000
+    #: Ceiling on the whole learned-skills block. Skills are injected into
+    #: EVERY request, so an oversized one is a permanent tax on the context
+    #: window rather than a per-conversation problem.
+    max_skill_block_chars: int = 6000
     #: Character ceiling on a single tool result fed back to the model.
     max_tool_result_chars: int = 8000
     #: Ceiling on ALL tool output within one agent run. The per-result clip is

@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import Feedback, Skill
 
 log = logging.getLogger(__name__)
@@ -179,11 +180,31 @@ def skills_prompt_block(db: Session, query: str) -> str:
         "procedures when they apply, and say so when you do:",
         "",
     ]
+    # Skills ride along on every request, so an unbounded block is a permanent
+    # tax on the context window -- and instructions can be model-generated,
+    # which means nobody necessarily reviewed their length. Budget the block as
+    # a whole and stop cleanly rather than truncating mid-procedure, since half
+    # a set of steps is worse than none.
+    budget = settings.max_skill_block_chars
     for skill in matches:
-        lines.append(f"### {skill['name']} (confidence {skill['confidence']:.0%})")
-        lines.append(skill["description"])
-        lines.append(skill["instructions"].strip())
-        lines.append("")
+        instructions = (skill["instructions"] or "").strip()
+        if len(instructions) > settings.max_skill_chars:
+            instructions = instructions[: settings.max_skill_chars].rstrip() + "\n…[truncated]"
+
+        entry = [
+            f"### {skill['name']} (confidence {skill['confidence']:.0%})",
+            (skill["description"] or "").strip(),
+            instructions,
+            "",
+        ]
+        cost = sum(len(line) + 1 for line in entry)
+        if cost > budget:
+            break
+        lines.extend(entry)
+        budget -= cost
+
+    if len(lines) <= 4:  # header only: nothing fitted
+        return ""
     return "\n".join(lines)
 
 

@@ -282,3 +282,148 @@ def test_the_budget_decreases_as_results_are_consumed(db):
 
     assert seen == sorted(seen, reverse=True), "budget must be monotonically consumed"
     assert seen[-1] == 0
+
+
+# =====================================================================
+# Learned skills in the prompt
+#
+# Skills are injected into EVERY request, so an oversized one is a permanent
+# tax on the context window rather than a per-conversation problem. Their
+# instructions can also be model-generated during distillation, which means
+# nobody necessarily reviewed the length before it reached the prompt.
+# =====================================================================
+
+from app.db.models import Skill  # noqa: E402
+from app.services.skills import skills_prompt_block  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clear_skills(db):
+    """The suite shares one database; skills from another test would otherwise
+    match these queries and change what fits in the budget."""
+    db.query(Skill).delete()
+    db.commit()
+    yield
+    db.query(Skill).delete()
+    db.commit()
+
+
+def add_skill(db, name: str, instructions: str, description: str = "does a thing") -> None:
+    db.add(
+        Skill(
+            name=name,
+            description=description,
+            instructions=instructions,
+            trigger_keywords=["deploy", "rollback"],
+            confidence=0.9,
+            status="active",
+        )
+    )
+    db.commit()
+
+
+def test_the_skill_block_is_bounded(db):
+    """Three matching skills with rambling instructions measured at ~98,000
+    characters, about 24,500 tokens, on every single request."""
+    for i in range(5):
+        add_skill(db, f"deploy-{i}", "Step: roll back the deploy and restart. " * 800)
+
+    block = skills_prompt_block(db, "how do I deploy and rollback?")
+
+    assert len(block) <= settings.max_skill_block_chars + 200
+
+
+def test_one_oversized_skill_is_truncated_and_marked(db):
+    add_skill(db, "huge", "x" * 40_000)
+
+    block = skills_prompt_block(db, "deploy rollback")
+
+    assert "truncated" in block
+    assert len(block) <= settings.max_skill_block_chars + 200
+
+
+def test_an_ordinary_skill_is_passed_through_intact(db):
+    add_skill(
+        db,
+        "rollback",
+        "1. find the previous image tag\n2. redeploy it\n3. verify health",
+        description="Roll back a bad deploy.",
+    )
+
+    block = skills_prompt_block(db, "how do I roll back a deploy?")
+
+    assert "verify health" in block
+    assert "truncated" not in block
+
+
+def test_skills_are_dropped_whole_rather_than_cut_mid_procedure(db):
+    """Half a set of steps is worse than none: the model would follow a
+    truncated procedure believing it was complete."""
+    add_skill(db, "first", "1. do this\n2. then this")
+    for i in range(4):
+        add_skill(db, f"filler-{i}", "y" * 1_900)
+
+    block = skills_prompt_block(db, "deploy rollback")
+
+    # Every skill that appears at all appears with its heading.
+    headings = block.count("### ")
+    bodies = sum(1 for line in block.splitlines() if line.strip() and not line.startswith("#"))
+    assert headings >= 1
+    assert bodies >= headings, "a skill heading was emitted without its content"
+
+
+def test_no_matching_skills_means_no_block(db):
+    assert skills_prompt_block(db, "something entirely unrelated to anything stored") == ""
+
+
+def test_skill_instructions_are_bounded_at_the_api(client):
+    """Distillation writes model-generated instructions straight to the DB, so
+    the field needs a ceiling like every other free-text input."""
+    response = client.post(
+        "/v1/skills",
+        json={
+            "name": "oversized",
+            "description": "d",
+            "instructions": "z" * 20_000,
+            "trigger_keywords": ["x"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_every_free_text_field_that_reaches_a_prompt_is_bounded():
+    """A guard for the whole class of bug, not another instance of it.
+
+    Three separate overflows -- history, tool output, skills -- all came from
+    bounding by count while leaving size open. This fails if a new free-text
+    field is added without a max_length, so the next one is caught at the
+    commit that introduces it rather than by measuring the prompt again.
+    """
+    from annotated_types import MaxLen
+
+    from app.api import schemas
+
+    # Document bodies are legitimately large and are chunked before they ever
+    # reach a prompt, so they are the one deliberate exemption.
+    exempt = {("IngestTextRequest", "content")}
+
+    unbounded: list[str] = []
+    for name in dir(schemas):
+        model = getattr(schemas, name)
+        if not (isinstance(model, type) and issubclass(model, schemas.BaseModel)):
+            continue
+        for field_name, field in model.model_fields.items():
+            annotation = str(field.annotation)
+            is_plain_string = annotation in {"<class 'str'>", "str | None"}
+            if not is_plain_string or (name, field_name) in exempt:
+                continue
+            if field.metadata and any(isinstance(m, MaxLen) for m in field.metadata):
+                continue
+            # Enum-style fields constrained by pattern are bounded in practice.
+            if any(getattr(m, "pattern", None) for m in field.metadata or []):
+                continue
+            unbounded.append(f"{name}.{field_name}")
+
+    assert not unbounded, (
+        "free-text fields with no max_length: " + ", ".join(sorted(unbounded))
+    )
