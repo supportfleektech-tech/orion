@@ -1,140 +1,36 @@
-# ORION End-to-End Roadmap
+# Roadmap
 
-## Phase 0 — Foundation
+## v1.0.0 — shipped
 
-- repository and environment management;
-- Docker Postgres + pgvector;
-- FastAPI API;
-- React/Vite client;
-- Ollama local model;
-- OpenRouter optional cloud route;
-- health checks and environment validation.
+Complete assistant: chat, agent loop, memory, RAG, governed tools, approvals, kill switch,
+automations, observability, settings, Docker deployment and CI.
 
-Exit criteria: browser UI can send a request and receive a model response.
+## v1.1 — depth — shipped
 
-## Phase 1 — Real assistant core
+* ✅ Token-level streaming from provider to UI
+* ✅ Reranking pass over retrieved chunks
+* ✅ Alembic migrations, applied automatically on boot
+* ✅ Per-conversation system prompts and personas
 
-- conversation persistence;
-- streaming responses;
-- model/tool metadata;
-- tool registry;
-- policy engine;
-- approval records;
-- audit events;
-- cancellation/timeouts;
-- per-task traces.
+## v1.2 — reach
 
-Exit criteria: a multi-step task can call safe tools, record a trace and finish deterministically.
+* ✅ MCP client so ORION can consume external MCP servers (see `MCP.md`)
+* OAuth connector framework with encrypted secret storage — *still deferred.*
+  The Connectors page covers the services ORION actually talks to; anything
+  needing real OAuth belongs behind an MCP server you run.
+* Cron-expression scheduling in addition to intervals
+* ✅ Evaluation harness with regression fixtures and scoring (see `EVALUATION.md`)
 
-## Phase 2 — Full RAG
+## v1.3 — surfaces
 
-- document ingestion for PDF/DOCX/MD/TXT/code;
-- SHA-256 dedupe;
-- chunking + metadata;
-- local embeddings;
-- pgvector HNSW;
-- hybrid vector + FTS retrieval;
-- optional reranking;
-- source citations;
-- memory consolidation;
-- memory decay / archival.
+* ✅ Voice input/output — local faster-whisper in, on-device Supertonic out,
+  plus spoken control of the dashboard (see `VOICE.md`)
+* Desktop shell (Tauri)
+* Multi-agent planner/executor/verifier split with shared scratchpad
 
-Exit criteria: ORION can answer questions over a user knowledge folder with source references.
+## Principles
 
-## Phase 3 — Agent runtime
-
-- explicit planner/executor/verifier states;
-- task graph / DAG;
-- retries with budgets;
-- tool result normalization;
-- sub-agents for research/coding/data/document tasks;
-- result verifier;
-- artifact manager;
-- resumable tasks.
-
-Exit criteria: multi-step work survives transient failures and can resume.
-
-## Phase 4 — MCP ecosystem
-
-- MCP client adapter;
-- local stdio server support;
-- Streamable HTTP support;
-- server discovery/registry;
-- tool capability inspection;
-- per-server/per-tool permissions;
-- MCP auth/OAuth integration;
-- provenance for MCP results.
-
-Exit criteria: install/connect an MCP server and expose selected tools inside ORION's policy gateway.
-
-## Phase 5 — Browser + computer use
-
-- Playwright browser pool;
-- isolated browser profiles;
-- screenshot/DOM extraction;
-- navigation policy;
-- download sandbox;
-- credential isolation;
-- confirmation checkpoints for external writes;
-- replayable automation recipes.
-
-Exit criteria: ORION can perform read-only web workflows end-to-end and execute approved write workflows.
-
-## Phase 6 — Integrations
-
-Connector SDK for:
-
-- GitHub/GitLab;
-- Google/Microsoft mail and calendar;
-- Discord/Slack/Telegram;
-- Notion/Google Drive/OneDrive;
-- RSS/news;
-- databases;
-- generic REST/OpenAPI;
-- social platforms where official APIs and permitted access exist.
-
-Each connector exposes read/write capabilities separately.
-
-## Phase 7 — Voice + multimodal
-
-- local STT;
-- push-to-talk and optional wake word;
-- local TTS;
-- screenshot/image input;
-- document vision;
-- voice session state;
-- interruption handling.
-
-## Phase 8 — Self-improvement loop
-
-Do not directly self-edit production code or model weights. Instead:
-
-1. collect task traces;
-2. detect failure patterns;
-3. generate candidate prompt/tool changes;
-4. replay regression suite;
-5. score against golden tasks;
-6. require human approval for policy/security changes;
-7. version and canary changes;
-8. promote only if quality and safety improve.
-
-## Phase 9 — Packaging
-
-- PWA installability;
-- Tauri desktop wrapper;
-- background daemon;
-- encrypted local secret store;
-- device discovery;
-- LAN-only mode;
-- optional remote access through a secure tunnel.
-
-## Phase 10 — Advanced scale
-
-- multi-agent orchestration;
-- model-specific expert pools;
-- vector cache;
-- semantic result cache;
-- local GPU scheduling;
-- distributed workers;
-- tenant isolation;
-- enterprise policies.
+1. Zero required spend — every default must work for free and offline.
+2. Deny by default — new capabilities ship disabled with a risk tier.
+3. Never hard-fail — degrade with an explanation instead of erroring.
+4. Observable — anything the agent does must be inspectable afterwards.

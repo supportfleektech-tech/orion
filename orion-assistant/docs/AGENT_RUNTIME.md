@@ -1,66 +1,93 @@
 # Agent Runtime
 
-## State machine
+Implementation: `backend/app/services/agent_runtime.py`.
 
-```text
-QUEUED
-  ↓
-INTENT
-  ↓
-PLAN
-  ↓
-RETRIEVE
-  ↓
-EXECUTE ←──── retry (bounded)
-  ↓
-VERIFY
-  ├─ fail → REVISE → EXECUTE
-  └─ pass → FINALIZE
-                 ↓
-              MEMORY
-                 ↓
-               DONE
+## Loop
+
+```
+build_context → model call → tool calls? → execute via policy gate → feed results back
+                     ▲                                                      │
+                     └──────────────────────────────────────────────────────┘
+                     (max MAX_TOOL_LOOPS iterations)
 ```
 
-## Planning
+1. **Context** — `retrieve_memories` and `search_chunks` produce a compact evidence block.
+2. **Messages** — system prompt, context block, last `MAX_HISTORY_MESSAGES` turns, new user turn.
+3. **Routing** — `estimate_complexity` (length + analytical markers) selects `normal` or `heavy`;
+   heavy tasks prefer cloud when escalation is enabled and configured.
+4. **Tools** — only policy-allowed tools are advertised. Each call is JSON-parsed defensively,
+   executed through `execute_tool`, and its result is appended as a `tool` message.
+5. **Termination** — the loop ends when the model returns no tool calls or the budget is exhausted.
+6. **Persistence** — the run, full trace and a low-confidence interaction summary are stored.
 
-A plan is an implementation detail, not a promise. Store structured steps:
+## Degraded mode
+
+If every provider fails and `OFFLINE_FALLBACK_ENABLED` is true, the router returns a labelled
+offline response. The runtime then attempts `fallback.extractive_answer`, which ranks sentences from
+retrieved memories and chunks by keyword overlap and returns the top five with source attribution.
+The user always gets something grounded and clearly labelled rather than an error.
+
+## Tool execution contract
+
+`execute_tool` returns one of:
 
 ```json
-{
-  "goal": "produce report",
-  "steps": [
-    {"id":"s1","action":"retrieve_sources","status":"queued"},
-    {"id":"s2","action":"analyze","depends_on":["s1"],"status":"queued"},
-    {"id":"s3","action":"write_report","depends_on":["s2"],"status":"queued"},
-    {"id":"s4","action":"verify","depends_on":["s3"],"status":"queued"}
-  ],
-  "budget": {"tool_calls": 20, "minutes": 10}
-}
+{"ok": true, "result": {...}}
+{"ok": false, "error": "reason"}
+{"ok": false, "approval_required": true, "approval_id": "uuid", "error": "..."}
 ```
 
-## Verification
+Every outcome is written to `tool_runs` and `audit_events`.
 
-Every non-trivial task should declare acceptance criteria before execution.
+## System prompt
 
-Examples:
+Stored as `SYSTEM_PROMPT` in the module. It establishes: concision, evidence orientation, treating
+memory as context rather than truth, no fabricated action claims, approval for risky actions, no
+secret or chain-of-thought disclosure, and stating assumptions when ambiguous.
 
-- code: tests pass + lint passes;
-- research: minimum source count + freshness + contradiction check;
-- data: schema validation + row-count checks;
-- browser: expected page state + screenshot/DOM evidence;
-- document: required sections + no unresolved placeholders.
+## Tracing
 
-## Multi-agent pattern
+Each iteration appends `{step, provider, model, latency_ms, text, tool_calls}` and each tool call
+appends `{step, tool, arguments, result_ok}`. Traces are visible at `/v1/runs/{id}` and in the
+Observability page.
 
-Use specialized workers only when specialization improves reliability:
 
-- Planner;
-- Researcher;
-- Coder;
-- Data Analyst;
-- Writer;
-- Browser Operator;
-- Critic/Verifier.
+## Prompt budget
 
-The parent orchestrator owns the final result and policy enforcement.
+Every request carries the system prompt, the persona, retrieved context and
+replayed history. Each part is bounded, because exceeding the model's context
+window is a hard failure rather than a degradation:
+
+| Part | Limit | Setting |
+|---|---|---|
+| Conversation history | 20 messages **and** 24,000 characters | `MAX_HISTORY_MESSAGES`, `MAX_HISTORY_CHARS` |
+| A single memory | 2,000 characters | `MAX_MEMORY_CHARS` |
+| A knowledge chunk | 600 characters | — |
+| Retrieved memories/chunks | 8 | `MAX_CONTEXT_CHUNKS` |
+| A single tool result | 8,000 characters | `MAX_TOOL_RESULT_CHARS` |
+| All tool output in one run | 24,000 characters | `MAX_TOOL_OUTPUT_CHARS` |
+| One learned skill | 2,000 characters | `MAX_SKILL_CHARS` |
+| The whole skills block | 6,000 characters | `MAX_SKILL_BLOCK_CHARS` |
+
+History is trimmed from the **oldest** end so recent turns survive, and an
+oversized single message is truncated with a marker rather than dropped, so
+the model can tell the turn happened.
+
+Skills are the case to watch: unlike history or tool output they ride on
+*every* request, so an oversized one is a permanent tax rather than a
+per-conversation problem — and distillation writes model-generated
+instructions straight to the database, so their length is not necessarily
+reviewed by anyone. Skills are dropped whole when the budget runs out rather
+than cut mid-procedure, because a truncated set of steps reads as complete.
+
+Tool output needs both limits. Clipping each result bounds one call but not
+the run: results accumulate across loop iterations, so six iterations reading
+large files grew the prompt to ~42,000 characters with a single call per turn,
+and several times that with parallel calls. When the per-run budget is spent
+the model is told the output was withheld — returning nothing instead would be
+indistinguishable from a tool that genuinely found nothing, and it would
+simply retry.
+
+The character caps matter more than the counts. Twenty short turns is a few
+thousand characters; twenty turns that pasted file contents measured at
+~95,000 tokens, roughly 23x a 4k window. Raise these on a long-context model.

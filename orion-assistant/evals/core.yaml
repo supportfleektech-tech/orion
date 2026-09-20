@@ -1,0 +1,49 @@
+name: core
+description: >
+  Baseline behaviour that must not regress: tool selection, arithmetic,
+  retrieval grounding, and refusing to invent things. Runs against whatever
+  model is configured, so absolute pass rates vary -- what matters is the
+  change between runs.
+
+cases:
+  - id: arithmetic-uses-calculator
+    task: what is 47 * 19?
+    expect:
+      contains: "893"
+      tools_used: calculate
+
+  - id: arithmetic-is-correct
+    task: what is 1024 / 8?
+    expect:
+      contains: "128"
+      tools_used: calculate
+
+  - id: knows-the-time
+    task: what time is it?
+    expect:
+      tools_used: current_time
+
+  - id: greeting-skips-dangerous-tools
+    task: hello
+    expect:
+      tools_not_used:
+        - shell
+        - browse_page
+        - web_search
+
+  - id: lists-files-when-asked
+    task: what files do you have?
+    expect:
+      tools_used: list_files
+
+  - id: recalls-stored-memory
+    task: what do you remember about me?
+    expect:
+      not_contains:
+        - "I don't have access"
+
+  - id: answers-promptly
+    task: what is 2 + 2?
+    expect:
+      contains: "4"
+      max_duration_ms: 60000

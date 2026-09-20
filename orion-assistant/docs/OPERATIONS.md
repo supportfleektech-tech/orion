@@ -1,57 +1,123 @@
-# Operations Runbook
+# Operations
 
-## Start
-
-```bash
-./scripts/bootstrap.sh
-./scripts/run-backend.sh
-./scripts/run-frontend.sh
-```
-
-## Health
+## Deploy
 
 ```bash
-./scripts/healthcheck.sh
+cp .env.example .env
+docker compose up -d --build
+docker compose ps
+curl -fsS http://localhost:8000/health
 ```
 
-## Backups
+UI on `:8080`, API on `:8000`. The `api` service has a healthcheck and `web` waits for it.
+
+### Persistence
+
+| Volume | Contents |
+|---|---|
+| `orion-data` | SQLite database (`/data/orion.db`) |
+| `orion-knowledge` | Uploaded and ingested source files |
+
+Back up with `docker run --rm -v orion_orion-data:/d -v $PWD:/b alpine tar czf /b/orion-data.tgz /d`.
+
+### Postgres
 
 ```bash
-docker compose exec postgres pg_dump -U orion -d orion > backup.sql
+docker compose --profile postgres up -d postgres
+# in .env:
+DATABASE_URL=postgresql+psycopg://orion:orion@postgres:5432/orion
+docker compose up -d --build api
 ```
 
-Encrypt off-device backups.
+Tables are created automatically at boot.
 
-## Upgrade strategy
+## Monitor
 
-1. backup database;
-2. pin application dependency versions in release builds;
-3. run migration tests;
-4. run golden evaluation suite;
-5. upgrade one component at a time.
+| Endpoint | Use |
+|---|---|
+| `GET /health` | Liveness / readiness probe |
+| `GET /v1/system/status` | Provider reachability, counts, flags, kill switch |
+| `GET /v1/system/metrics` | Success rates, latency, router statistics |
+| `GET /v1/audit` | Governance event stream |
 
-## Disaster recovery
+The Command Center and Observability pages surface all of these.
 
-The minimum recoverable state is:
+## Upgrade
 
-- Postgres dump;
-- `.env` secrets stored separately;
-- knowledge source files;
-- connector configuration metadata;
-- prompt/policy versions;
-- evaluation suite.
-
-## Local-only emergency mode
-
-Set:
-
-```env
-LOCAL_ONLY=true
-CLOUD_ESCALATION_ENABLED=false
-ENABLE_WEB_SEARCH=false
-ALLOW_SHELL_TOOL=false
-ALLOW_BROWSER_TOOL=false
-ALLOW_NETWORK_TOOL=false
+```bash
+git pull
+docker compose up -d --build
 ```
 
-Then restart the API.
+Schema changes are additive and applied by `init_db()`. For destructive schema changes, back up
+first and introduce Alembic.
+
+## Tuning behaviour
+
+The live system prompt is `backend/app/prompts/system.md`. Edit it and restart the API to change how
+ORION behaves — no code change required. It ships inside the image, so when using Docker either
+rebuild or bind-mount the file.
+
+Runtime flags changed via the Settings page or `PATCH /v1/settings` are persisted to the `settings`
+table and re-applied on boot (look for `Applied N persisted setting override(s)` in the log).
+Secrets, bind addresses and `DATABASE_URL` are deliberately **not** runtime-mutable; they come from
+the environment only.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Retrieval-only answer" banner | No model backend reachable | Start Ollama or set `OPENROUTER_API_KEY` |
+| Embedding warning in logs | Ollama embed model missing | `ollama pull nomic-embed-text` (hashed fallback is in use meanwhile) |
+| Tool shows "blocked" | Capability flag off or kill switch on | Toggle in Settings / Security |
+| `429` responses | Rate limit hit | Raise `RATE_LIMIT_PER_MINUTE` |
+| Container cannot reach Ollama | Host networking | Use `http://host.docker.internal:11434/v1` (already configured) |
+
+## Runbook: agent behaving unexpectedly
+
+1. Engage the kill switch (Security page).
+2. Inspect the run trace in Observability and the audit log.
+3. Disable the offending tool in Settings or Tools.
+4. Delete bad memories in the Memory page.
+5. Release the kill switch.
+
+
+## SQLite tuning
+
+The default database is SQLite, configured on every connection:
+
+| Pragma | Value | Why |
+|---|---|---|
+| `journal_mode` | `WAL` | Readers keep working while a write is in flight |
+| `busy_timeout` | `30000` | Wait out a held write lock instead of failing at the 5s driver default |
+| `synchronous` | `NORMAL` | The usual WAL pairing; much faster than fsync per commit, durable enough for a local assistant |
+| `foreign_keys` | `ON` | Off by default in SQLite, and the cascades depend on it |
+
+`busy_timeout` is the one that matters. SQLite serialises writers, so a long
+agent run holding its transaction can block an incoming write. At the 5s
+default that write **fails**; at 30s it queues and succeeds. A lock held
+longer than 30s is a genuine deadlock and should surface rather than hang.
+
+Point `DATABASE_URL` at Postgres and none of this applies — it handles
+concurrent writers itself.
+
+
+## Upgrading an existing install
+
+`init_db()` runs on every boot and handles three cases:
+
+| Database state | What happens |
+|---|---|
+| Brand new | Tables created, stamped at head |
+| Pre-Alembic (no `alembic_version`) | Stamped at baseline, then migrated to head |
+| Versioned | Migrated to head |
+
+A failed migration is logged and boot continues, so a schema problem degrades
+the app rather than preventing it from starting at all. Check
+`GET /health` — it reports `schema.current_revision`, `schema.head_revision`
+and `schema.up_to_date`.
+
+Upgrades are covered by tests that seed a baseline database with real rows,
+migrate it, and then boot the app against the result in a fresh process to
+confirm the pre-existing data is still readable and writable through the API.
+Back up `orion.db` before a major upgrade anyway — it is a single file.

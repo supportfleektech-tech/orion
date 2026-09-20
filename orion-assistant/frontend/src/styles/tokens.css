@@ -1,0 +1,112 @@
+/**
+ * Design tokens.
+ *
+ * Every colour, shadow, radius, easing and duration in ORION resolves to a
+ * variable here. Two reasons: a single place to retune the whole product, and
+ * motion that feels like one system rather than a dozen ad-hoc transitions.
+ */
+
+:root {
+  /* ----------------------------------------------------------- surfaces */
+  --bg: #06080d;
+  --bg-deep: #04060a;
+  --panel: #0b1018;
+  --panel-raised: #0e1420;
+  --panel-inset: #070c13;
+
+  --line: #1f2735;
+  --line-soft: #18202d;
+  --line-strong: #2b3648;
+
+  /* --------------------------------------------------------------- ink */
+  --text: #eef2f7;
+  --text-dim: #aab6c7;
+  --muted: #7f8c9f;
+  /* Lightened to clear WCAG AA (4.5:1) on panel surfaces: this token
+     is used for real body copy such as empty states and hints. */
+  --muted-deep: #768191;
+
+  /* ------------------------------------------------------------ accent */
+  --accent: #7ca7ff;
+  --accent-bright: #9dbcff;
+  --accent-deep: #3f68b8;
+  --accent-glow: rgba(124, 167, 255, 0.35);
+  --accent-wash: rgba(124, 167, 255, 0.09);
+
+  --violet: #a98bff;
+  --cyan: #5fd8e6;
+
+  /* ------------------------------------------------------------ status */
+  --ok: #5ee2a1;
+  --ok-glow: rgba(94, 226, 161, 0.3);
+  --warn: #ffb454;
+  --warn-glow: rgba(255, 180, 84, 0.3);
+  --err: #ff7a7a;
+  --err-glow: rgba(255, 122, 122, 0.3);
+  --info: #9fc3ff;
+
+  /* ------------------------------------------------------------- radii */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  /* --------------------------------------------------------- elevation */
+  --e-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --e-2: 0 4px 14px rgba(0, 0, 0, 0.32);
+  --e-3: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --e-4: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --e-glow: 0 0 0 1px var(--accent-wash), 0 8px 30px rgba(63, 104, 184, 0.18);
+
+  /* ------------------------------------------------------------ motion */
+  /* Durations are short on purpose: UI motion should feel like response,
+     not performance. Anything above ~400ms reads as sluggish. */
+  --d-instant: 80ms;
+  --d-fast: 140ms;
+  --d-base: 220ms;
+  --d-slow: 360ms;
+  --d-slower: 560ms;
+
+  /* Standard easing: quick out of the gate, gentle landing. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --------------------------------------------------------- typography */
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ------------------------------------------------------------ layout */
+  --sidebar-w: 245px;
+  --topbar-h: 64px;
+}
+
+/**
+ * Honour the OS "reduce motion" setting.
+ *
+ * This is not optional politeness: animation can cause real nausea for people
+ * with vestibular disorders. Transitions collapse to near-zero rather than
+ * zero so state changes still read as changes, and Framer Motion reads the
+ * same preference via useReducedMotion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d-instant: 1ms;
+    --d-fast: 1ms;
+    --d-base: 1ms;
+    --d-slow: 1ms;
+    --d-slower: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

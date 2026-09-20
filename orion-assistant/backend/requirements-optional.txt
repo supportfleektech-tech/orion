@@ -1,0 +1,12 @@
+# Optional extras. NOT required to run ORION — the code guards these imports and
+# degrades with a clear message when they are absent.
+#
+#   browse_page tool      -> playwright  (then: playwright install chromium)
+#   MCP server + client   -> mcp         (expose ORION's tools, and use others')
+#   audio attachments     -> faster-whisper (local speech-to-text, no cloud)
+#   spoken replies        -> supertonic    (local on-device TTS, ONNX)
+
+playwright>=1.47,<2
+mcp>=1.10,<3
+faster-whisper>=1.1,<2
+supertonic>=1.3,<2

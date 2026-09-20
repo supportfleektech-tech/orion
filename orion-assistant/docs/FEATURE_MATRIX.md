@@ -1,28 +1,62 @@
-# Feature Matrix
+# Feature Matrix (v1.0.0)
 
-| Area | Starter | Target |
-|---|---:|---:|
-| Local LLM | ✅ | ✅ |
-| Cloud model routing | ✅ | ✅ |
-| Free OpenRouter route | ✅ | ✅ |
-| Conversation persistence | ✅ | ✅ |
-| Tool registry | ✅ | ✅ |
-| Tool policy gate | ✅ | ✅ |
-| RAG ingestion | ✅ | ✅ |
-| pgvector retrieval | ✅ | ✅ |
-| Hybrid FTS + vector | ◻️ | ✅ |
-| Reranker | ◻️ | ✅ |
-| MCP server | ✅ | ✅ |
-| MCP client | ◻️ | ✅ |
-| Browser automation | ◻️ | ✅ |
-| Shell sandbox | ◻️ | ✅ |
-| Web search | ✅ adapter | ✅ |
-| Voice | ◻️ | ✅ |
-| Social connectors | interface | ✅ per provider |
-| OAuth | ◻️ | ✅ |
-| Approval UI | ◻️ | ✅ |
-| Long-running worker queue | ◻️ | ✅ |
-| Streaming | ◻️ | ✅ |
-| Evaluations | tests | ✅ |
-| Self-improvement loop | docs | ✅ |
-| Desktop shell | ◻️ | ✅ |
+| Area | Status | Notes |
+|---|---|---|
+| Local LLM routing (Ollama) | ✅ | OpenAI-compatible, tool calling |
+| Cloud burst (OpenRouter) | ✅ | Ordered failover across fallback models |
+| Degraded / offline mode | ✅ | Extractive retrieval answers, never 500s |
+| Conversation persistence | ✅ | History, list, load, delete, pin, rename, archive |
+| Streaming | ✅ | Incremental SSE with token-by-token output, wired into the chat UI with live tool chips |
+| Agent tool loop | ✅ | Bounded iterations, full trace |
+| Memory store | ✅ | Upsert by key, pin, confidence, CRUD |
+| Hybrid retrieval | ✅ | Vector + keyword + confidence + pin boost |
+| Reranking | ✅ | Retrieval, BM25, coverage and proximity blended over the candidate set |
+| Embeddings | ✅ | Ollama with deterministic hashed fallback |
+| RAG ingestion | ✅ | Upload, paste, path, directory batch |
+| Formats (knowledge) | ✅ | txt, md, pdf, docx, html, csv, json, code |
+| Multimodal chat input | ✅ | Images to vision models; pdf/docx/pptx/xlsx extracted; audio transcribed; unreadable files reported honestly |
+| Model provisioning | ✅ | Hardware detection, tier ladder, one-command installer, in-UI download with progress |
+| Skill learning | ✅ | Successful runs distilled into reusable procedures, confidence reinforcement, auto-disable |
+| Feedback loop | ✅ | Thumbs up/down in chat, reinforcing the skills that shaped the answer |
+| Tool registry | ✅ | 13 builtin tools, JSON Schema, categories, risk tiers |
+| MCP server | ✅ | Read-only surface over memory and knowledge (opt-in) |
+| MCP client | ✅ | Register external servers; tools namespaced `server.tool` and policy-gated |
+| Conversation personas | ✅ | 5 presets plus a per-conversation system prompt, layered under the safety rules |
+| Voice input | ✅ | Browser recogniser with a local faster-whisper fallback |
+| Voice output | ✅ | On-device Supertonic TTS, optional autoplay |
+| Voice control | ✅ | Spoken navigation, capability toggles and playback; confirmation for anything that grants access |
+| Policy gate | ✅ | Flags, tiers, per-tool enable/disable |
+| Approval queue | ✅ | UI + API, approve-and-execute |
+| Kill switch | ✅ | Global, instant |
+| Audit log | ✅ | All governed events |
+| Automations | ✅ | Scheduler, manual run, history |
+| Observability | ✅ | Runs, traces, tool history, metrics |
+| Evaluation harness | ✅ | YAML suites graded deterministically against the live agent, with run history |
+| Design system | ✅ | Tokenised colour, motion, elevation; four-layer stylesheet; WCAG AA contrast enforced by test |
+| Motion | ✅ | Route transitions, staggered lists, shared-element nav, respects `prefers-reduced-motion` |
+| Command palette | ✅ | `Ctrl/Cmd+K` fuzzy search over pages and actions; unmatched text goes to chat |
+| Keyboard shortcuts | ✅ | `?` overlay; palette, voice and chat bindings |
+| Tasks view | ✅ | One place for approvals, schedules and run history |
+| Connectors | ✅ | Live probe of every external service, with why-it-is-down detail |
+| Live settings | ✅ | Flags, models, loop limits; persisted across restarts |
+| Web search | ✅ | SearXNG adapter (opt-in) |
+| HTTP / page fetch | ✅ | Allowlisted (opt-in) |
+| Shell sandbox | ✅ | Denylist, timeout, confined cwd (opt-in) |
+| Browser automation | ✅ | Playwright (opt-in, requires install) |
+| Auth | ✅ | Bearer token, off by default for local use |
+| Rate limiting | ✅ | Per IP, per minute |
+| Schema migrations | ✅ | Alembic, auto-upgrade on boot, revision reported at `/health` |
+| Docker packaging | ✅ | Multi-stage, non-root, healthchecks, nginx proxy |
+| Postgres + pgvector | ✅ | Compose profile, `DATABASE_URL` switch |
+| CI | ✅ | Tests, lint, frontend build, image builds |
+| Frontend tests | ✅ | Vitest + Testing Library: palette, shortcuts, UI primitives (37 tests) |
+| Real-model acceptance | ✅ | `scripts/verify-real-model.sh` exercises the live stack against an actual model |
+| Tests | ✅ | 559 backend tests incl. agent loop, token streaming, reranking, migrations, multimodal, skills, voice, real MCP round trips; ruff clean, strict TS |
+
+## Deliberately out of scope for v1
+
+OAuth credential storage (use an MCP server for services needing richer auth),
+desktop packaging, multi-agent
+orchestration and model fine-tuning (ORION improves via memory, knowledge and skills instead —
+see `LOCAL_MODELS.md`). Video is accepted but not analysed frame-by-frame, and scanned documents
+are not OCR'd. See `ROADMAP.md`.
