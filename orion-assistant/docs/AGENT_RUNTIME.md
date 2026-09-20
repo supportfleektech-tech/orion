@@ -66,10 +66,19 @@ window is a hard failure rather than a degradation:
 | Retrieved memories/chunks | 8 | `MAX_CONTEXT_CHUNKS` |
 | A single tool result | 8,000 characters | `MAX_TOOL_RESULT_CHARS` |
 | All tool output in one run | 24,000 characters | `MAX_TOOL_OUTPUT_CHARS` |
+| One learned skill | 2,000 characters | `MAX_SKILL_CHARS` |
+| The whole skills block | 6,000 characters | `MAX_SKILL_BLOCK_CHARS` |
 
 History is trimmed from the **oldest** end so recent turns survive, and an
 oversized single message is truncated with a marker rather than dropped, so
 the model can tell the turn happened.
+
+Skills are the case to watch: unlike history or tool output they ride on
+*every* request, so an oversized one is a permanent tax rather than a
+per-conversation problem — and distillation writes model-generated
+instructions straight to the database, so their length is not necessarily
+reviewed by anyone. Skills are dropped whole when the budget runs out rather
+than cut mid-procedure, because a truncated set of steps reads as complete.
 
 Tool output needs both limits. Clipping each result bounds one call but not
 the run: results accumulate across loop iterations, so six iterations reading
