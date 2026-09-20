@@ -247,13 +247,18 @@ orion-assistant/
 
 ## Verifying a real model
 
-CI runs against a mock LLM. To prove the real path end to end on your machine:
+CI runs against a mock LLM, because CI has no GPU and often no network. One
+command closes that gap on your machine:
 
 ```bash
-./scripts/setup-local-model.sh    # installs Ollama and picks a model for your RAM
-./scripts/run-backend.sh
-./scripts/verify-real-model.sh    # tool calls, streaming, grounding, memory, evals
+./scripts/verify.sh
 ```
+
+It installs dependencies, installs Ollama and pulls a model sized for your RAM,
+runs the offline suite, starts the backend, and then checks the real path:
+a plain answer, a tool call with correct arithmetic, incremental token
+streaming, retrieval grounding on a fact stored nowhere else, memory recall,
+and both evaluation suites. Safe to re-run; anything already done is skipped.
 
 See [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) for how to read the results.
 
