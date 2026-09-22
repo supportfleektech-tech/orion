@@ -77,8 +77,28 @@ fi
 [ -n "${MODELS// }" ] || die "no local model available"
 ok "models: $MODELS"
 
-# Use the first installed model unless the caller picked one.
-MODEL="${OLLAMA_MODEL:-$(printf '%s' "$MODELS" | awk '{print $1}')}"
+# Prefer the configured model (including the project .env) rather than an
+# arbitrary first entry from Ollama's list. The list order is not a capability
+# ranking, and a text-only or weak tool-calling model can make the real-model
+# acceptance checks fail even when a suitable model is already installed.
+CONFIGURED_MODEL="${OLLAMA_MODEL:-}"
+if [ -z "$CONFIGURED_MODEL" ] && [ -f .env ]; then
+  CONFIGURED_MODEL="$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)"
+  CONFIGURED_MODEL="${CONFIGURED_MODEL#\"}"
+  CONFIGURED_MODEL="${CONFIGURED_MODEL%\"}"
+fi
+
+if [ -n "$CONFIGURED_MODEL" ]; then
+  MODEL="$CONFIGURED_MODEL"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3.5:9b'; then
+  MODEL="qwen3.5:9b"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3.5:4b'; then
+  MODEL="qwen3.5:4b"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3:1.7b'; then
+  MODEL="qwen3:1.7b"
+else
+  MODEL="$(printf '%s' "$MODELS" | awk '{print $1}')"
+fi
 ok "using: $MODEL"
 
 # -------------------------------------------------------------- 3. offline

@@ -39,8 +39,11 @@ from app.tools.registry import ToolDefinition, registry
 
 log = logging.getLogger(__name__)
 
-# Remote calls must not be able to stall the agent loop indefinitely.
-CONNECT_TIMEOUT = 20.0
+# Remote calls must not be able to stall the agent loop indefinitely. The
+# connect budget includes starting a local stdio process and its MCP handshake;
+# cold-starting a Python/Node server can be slow while Ollama is loading a
+# model, so keep this separate from the shorter normal call budget.
+CONNECT_TIMEOUT = 60.0
 CALL_TIMEOUT = 60.0
 
 # Tools from remote servers are tagged so the UI (and the registry) can tell
