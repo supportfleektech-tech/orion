@@ -25,10 +25,14 @@ warn() { printf "  \033[33m!\033[0m %s\n" "$1"; }
 die()  { printf "\033[31m✗ %s\033[0m\n" "$1" >&2; exit 1; }
 
 API_PID=""
+VERIFY_DIR=""
 cleanup() {
   if [ -n "$API_PID" ] && kill -0 "$API_PID" 2>/dev/null; then
     kill "$API_PID" 2>/dev/null || true
     wait "$API_PID" 2>/dev/null || true
+  fi
+  if [ -n "$VERIFY_DIR" ]; then
+    rm -rf "$VERIFY_DIR"
   fi
 }
 trap cleanup EXIT
@@ -77,8 +81,28 @@ fi
 [ -n "${MODELS// }" ] || die "no local model available"
 ok "models: $MODELS"
 
-# Use the first installed model unless the caller picked one.
-MODEL="${OLLAMA_MODEL:-$(printf '%s' "$MODELS" | awk '{print $1}')}"
+# Prefer the configured model (including the project .env) rather than an
+# arbitrary first entry from Ollama's list. The list order is not a capability
+# ranking, and a text-only or weak tool-calling model can make the real-model
+# acceptance checks fail even when a suitable model is already installed.
+CONFIGURED_MODEL="${OLLAMA_MODEL:-}"
+if [ -z "$CONFIGURED_MODEL" ] && [ -f .env ]; then
+  CONFIGURED_MODEL="$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)"
+  CONFIGURED_MODEL="${CONFIGURED_MODEL#\"}"
+  CONFIGURED_MODEL="${CONFIGURED_MODEL%\"}"
+fi
+
+if [ -n "$CONFIGURED_MODEL" ]; then
+  MODEL="$CONFIGURED_MODEL"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3.5:9b'; then
+  MODEL="qwen3.5:9b"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3.5:4b'; then
+  MODEL="qwen3.5:4b"
+elif printf '%s' "$MODELS" | tr ' ' '\n' | grep -qx 'qwen3:1.7b'; then
+  MODEL="qwen3:1.7b"
+else
+  MODEL="$(printf '%s' "$MODELS" | awk '{print $1}')"
+fi
 ok "using: $MODEL"
 
 # -------------------------------------------------------------- 3. offline
@@ -90,8 +114,16 @@ bold "== 3/5  Offline test suite"
 # -------------------------------------------------------------- 4. backend
 bold "== 4/5  Backend"
 export OLLAMA_MODEL="$MODEL"
-export DATABASE_URL="${DATABASE_URL:-sqlite:///$ROOT/orion.db}"
-export KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-$ROOT/knowledge}"
+
+# Verification must not inherit a stale runtime override from the user's
+# normal database. Settings persisted by the UI intentionally survive restarts,
+# but that would make `OLLAMA_MODEL=... ./scripts/verify.sh` report a different
+# model than the one requested. Use an isolated database and knowledge directory
+# by default; callers can still provide DATABASE_URL/KNOWLEDGE_DIR explicitly.
+VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/orion-verify.XXXXXX")" \
+  || die "could not create a temporary verification directory"
+export DATABASE_URL="${DATABASE_URL:-sqlite:///$VERIFY_DIR/orion.db}"
+export KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-$VERIFY_DIR/knowledge}"
 mkdir -p "$KNOWLEDGE_DIR"
 
 (cd backend && ../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 \

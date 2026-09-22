@@ -165,7 +165,13 @@ def test_inspect_endpoint(client):
     assert response.json()["handled_as"] == "text_read"
 
 
-def test_capabilities_endpoint_is_honest(client):
+def test_capabilities_endpoint_is_honest(client, monkeypatch):
+    # Model provisioning is intentionally allowed to activate a model, so do
+    # not let another test's hardware-dependent recommendation leak into this
+    # assertion about the text-only default.
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ollama_model", "qwen3:4b")
     body = client.get("/v1/attachments/capabilities").json()
     assert body["formats"]["text"]["supported"] is True
     assert body["formats"]["documents"]["supported"] is True
