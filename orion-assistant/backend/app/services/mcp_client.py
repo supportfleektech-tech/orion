@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shlex
+import shutil
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from typing import Any
@@ -82,6 +84,54 @@ def qualified_name(server_name: str, tool_name: str) -> str:
 # --------------------------------------------------------------- connection
 
 
+def _is_executable_file(path: str) -> bool:
+    """Return whether *path* names a runnable file.
+
+    ``shlex.split`` is intentionally used for MCP commands so that shell
+    metacharacters are never interpreted.  A command assembled by a caller can
+    nevertheless contain an unquoted executable path with spaces (for example,
+    a virtualenv below ``/opt/Dev 2.0``).  In that case ``shlex.split`` turns
+    one path into several tokens and the MCP SDK tries to execute the first
+    directory.  Keep this small check separate from ``shutil.which`` because
+    ``which`` is allowed to resolve names on PATH, while this helper must not
+    treat a directory as an executable merely because it has search permission.
+    """
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+def _command_argv(command: str) -> list[str]:
+    """Parse a stdio command without invoking a shell.
+
+    Normal commands follow shell-style quoting, e.g. ``python server.py`` or
+    ``"/path with spaces/python" server.py``.  For compatibility with commands
+    assembled programmatically, also recover an *unquoted* executable path with
+    spaces when its first token is not runnable.  Only the leading executable
+    is reassembled; all remaining tokens stay arguments and shell expansion is
+    never performed.
+    """
+    argv = shlex.split(command or "")
+    if not argv:
+        return []
+
+    # A normal absolute/relative path or a command available on PATH needs no
+    # special handling.  ``shutil.which`` also covers commands such as ``npx``.
+    if _is_executable_file(argv[0]) or shutil.which(argv[0]):
+        return argv
+
+    # The path was split at spaces.  Look for the first prefix that is a real
+    # executable file, rather than accepting a directory with execute/search
+    # permission as the command.
+    for end in range(2, len(argv) + 1):
+        candidate = " ".join(argv[:end])
+        if _is_executable_file(candidate):
+            return [candidate, *argv[end:]]
+
+    # Let the SDK produce its usual useful OS error for an actually missing
+    # command.  This also preserves PATH lookup semantics for unusual command
+    # names that were not found locally.
+    return argv
+
+
 class _Connection:
     """A short-lived MCP session.
 
@@ -115,7 +165,7 @@ class _Connection:
                     streamablehttp_client(self.server.url)
                 )
             else:
-                argv = shlex.split(self.server.command or "")
+                argv = _command_argv(self.server.command or "")
                 if not argv:
                     raise ValueError("stdio transport requires a command")
                 params = StdioServerParameters(

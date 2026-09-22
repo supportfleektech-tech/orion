@@ -91,6 +91,29 @@ requires_sdk = pytest.mark.skipif(
 
 
 # ------------------------------------------------------------ naming/policy
+def test_stdio_command_recovers_an_unquoted_executable_path_with_spaces(tmp_path):
+    executable = tmp_path / "Dev 2.0" / "bin" / "python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+
+    command = f"{executable} server.py --flag value"
+
+    assert mcp_client._command_argv(command) == [
+        str(executable),
+        "server.py",
+        "--flag",
+        "value",
+    ]
+
+
+def test_stdio_command_keeps_shell_quoting():
+    assert mcp_client._command_argv(f'"{sys.executable}" server.py') == [
+        sys.executable,
+        "server.py",
+    ]
+
+
 def test_tools_are_namespaced_by_server():
     assert mcp_client.qualified_name("docs", "search") == "docs.search"
 
